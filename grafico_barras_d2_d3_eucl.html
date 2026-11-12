@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<!-- Plantilla de grafico_barras_d2_d3.R: la marca de datos del script se reemplaza por los datos -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Distancias d2 y d3</title>
+<style>
+  :root {
+    --tratados: #9ECAE1;
+    --controles: #FCAE91;
+    --pnis: #A1D99B;
+    --tratados-osc: #08306B;
+    --controles-osc: #67000D;
+    --pnis-osc: #00441B;
+    --limite: #D7191C;
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --rejilla: #ebebeb;
+    --panel: #f6f6f6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, subtítulo, selectores y convenciones (igual al mapa interactivo) */
+  #panel {
+    width: 340px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+  #indicador-titulo { font-size: 16px; font-weight: 700; margin: 0 0 2px; }
+  #corte-titulo { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  .seccion { margin-top: 18px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave); margin-bottom: 7px;
+  }
+  .botones { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .botones button {
+    font: inherit; font-size: 13px; padding: 8px 6px; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px; line-height: 1.3;
+  }
+  .botones button small { display: block; font-size: 11px; font-weight: 400; opacity: .8; }
+  .botones button:hover { border-color: var(--tratados-osc); }
+  .botones button[aria-pressed="true"] {
+    background: var(--tratados-osc); border-color: var(--tratados-osc); color: #fff; font-weight: 600;
+  }
+  .botones button:focus-visible { outline: 2px solid var(--tratados-osc); outline-offset: 2px; }
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
+  .leyenda-item svg { flex: none; }
+  .caja { width: 22px; height: 14px; flex: none; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+  code { font-family: Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Área del gráfico: encabezado con el conteo arriba a la derecha y barras debajo */
+  #contenedor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #encabezado {
+    flex: none; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+    padding: 16px 18px 4px;
+  }
+  #encabezado-texto { font-size: 13.5px; line-height: 1.5; color: var(--texto-suave); }
+  #encabezado-texto b { color: var(--texto); }
+  #conteo {
+    flex: none; background: #fff; border: 1px solid #bdbdbd; padding: 8px 12px;
+    font-size: 14px; line-height: 1.6; font-variant-numeric: tabular-nums;
+  }
+  #grafico { flex: 1; position: relative; overflow: auto; min-height: 0; }
+  #barras { display: block; }
+  #barras text { font-family: inherit; }
+  .valor { fill: var(--texto); font-variant-numeric: tabular-nums; }
+  .nombre { font-size: 11px; fill: var(--texto); }
+  .eje { font-size: 11px; fill: var(--texto-suave); font-variant-numeric: tabular-nums; }
+  .col { cursor: pointer; outline: none; }
+  .col .barra { stroke: none; }
+  .col:hover .barra, .col:focus-visible .barra, .col.activa .barra { stroke: #000; stroke-width: 1.5; }
+  .col:hover .nombre, .col:focus-visible .nombre, .col.activa .nombre { font-weight: 700; }
+
+  /* Etiqueta al pasar el cursor y ficha (banner) al hacer clic, con el mismo contenido que el mapa */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 5; display: none; white-space: nowrap;
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 3px; padding: 4px 8px;
+    font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  #ficha {
+    position: absolute; z-index: 6; display: none; width: 290px;
+    background: #fff; border-radius: 12px; padding: 10px 30px 11px 13px;
+    font-size: 13px; line-height: 1.45; box-shadow: 0 3px 14px rgba(0,0,0,.4);
+  }
+  #ficha-cerrar {
+    position: absolute; top: 4px; right: 6px; border: 0; background: none; cursor: pointer;
+    font: 18px/1 inherit; color: #757575; padding: 4px;
+  }
+  #ficha-cerrar:hover { color: #000; }
+  .pop-nombre { font-weight: 700; font-size: 14.5px; }
+  .pop-dpto { color: var(--texto-suave); margin-bottom: 7px; }
+  .pop-fila { margin-top: 3px; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 3px; font-weight: 600; font-size: 12px; }
+  .chip-1 { background: var(--tratados); color: var(--tratados-osc); }
+  .chip-0 { background: var(--controles); color: var(--controles-osc); }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; height: auto; }
+    #panel { width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { min-height: 90vh; }
+    #encabezado { flex-direction: column-reverse; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="panel">
+  <h1>Distancia al PNIS más cercano: municipios tratados y de control</h1>
+  <div id="indicador-titulo"></div>
+  <div id="corte-titulo"></div>
+  <p id="subtitulo"></p>
+
+  <div class="seccion">
+    <div class="etiqueta">Indicador</div>
+    <div id="sel-indicador" class="botones" role="group" aria-label="Indicador"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Punto de corte</div>
+    <div id="sel-corte" class="botones" role="group" aria-label="Punto de corte"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Convenciones</div>
+    <div class="leyenda-item"><span class="caja" style="background: var(--tratados)"></span><span id="ley-tratados"></span></div>
+    <div class="leyenda-item"><span class="caja" style="background: var(--controles)"></span><span id="ley-controles"></span></div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><line x1="11" y1="1.5" x2="11" y2="12.5" stroke="#D7191C" stroke-width="2" stroke-dasharray="0.1 3.4" stroke-linecap="round"/></svg>
+      <span>Límite entre el último tratado y el primer control</span>
+    </div>
+  </div>
+
+  <div class="seccion nota">
+    <p>Los 37 municipios se ordenan de izquierda a derecha de menor a mayor distancia; el número sobre cada barra es la distancia en km. Pase el cursor sobre una barra para ver el municipio y haga clic para ver su ficha.</p>
+    <p>Fuente: indicadores <code>d2_eucl_*</code> y <code>d3_eucl_*</code> de Master.do (sección 4.1), muestra de 37 ciudades intermedias sin municipios PNIS de alta probabilidad; nombres del MGN 2021 (DANE). Tratado: distancia menor o igual al punto de corte.</p>
+  </div>
+</aside>
+
+<main id="contenedor">
+  <div id="encabezado">
+    <div id="encabezado-texto"></div>
+    <div id="conteo" aria-live="polite"></div>
+  </div>
+  <div id="grafico">
+    <svg id="barras" role="group" aria-label="Distancia de cada municipio al PNIS más cercano"></svg>
+    <div id="tip"></div>
+    <div id="ficha" role="dialog" aria-live="polite">
+      <button id="ficha-cerrar" type="button" aria-label="Cerrar">×</button>
+      <div id="ficha-contenido"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+  "use strict";
+
+  const DATOS = {"muestra":[{"cod":"05001","mpio":"MEDELLÍN","dpto":"ANTIOQUIA","dist_d2":81.8,"pnis_d2":"05652","est_d2_mediana":0,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":61.5,"pnis_d3":"05652","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"05045","mpio":"APARTADÓ","dpto":"ANTIOQUIA","dist_d2":44.9,"pnis_d2":"23807","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":54.6,"pnis_d3":"27800","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"05088","mpio":"BELLO","dpto":"ANTIOQUIA","dist_d2":86.2,"pnis_d2":"05652","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":1,"dist_d3":64.8,"pnis_d3":"05652","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"05266","mpio":"ENVIGADO","dpto":"ANTIOQUIA","dist_d2":69.9,"pnis_d2":"05652","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":57.8,"pnis_d3":"05652","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"05360","mpio":"ITAGÜÍ","dpto":"ANTIOQUIA","dist_d2":78,"pnis_d2":"05652","est_d2_mediana":0,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":61.2,"pnis_d3":"05652","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"05837","mpio":"TURBO","dpto":"ANTIOQUIA","dist_d2":43.9,"pnis_d2":"27800","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":40.4,"pnis_d3":"27800","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"08001","mpio":"BARRANQUILLA","dpto":"ATLÁNTICO","dist_d2":84.7,"pnis_d2":"13062","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":1,"dist_d3":83.6,"pnis_d3":"13062","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":1},{"cod":"08758","mpio":"SOLEDAD","dpto":"ATLÁNTICO","dist_d2":78.4,"pnis_d2":"13062","est_d2_mediana":0,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":77.4,"pnis_d3":"13062","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":1},{"cod":"11001","mpio":"BOGOTÁ, D.C.","dpto":"BOGOTÁ, D.C.","dist_d2":143,"pnis_d2":"50370","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":158.2,"pnis_d3":"50370","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"13001","mpio":"CARTAGENA DE INDIAS","dpto":"BOLÍVAR","dist_d2":53.7,"pnis_d2":"13062","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":54.4,"pnis_d3":"13062","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"15001","mpio":"TUNJA","dpto":"BOYACÁ","dist_d2":181.4,"pnis_d2":"05652","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":198.9,"pnis_d3":"05652","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"17001","mpio":"MANIZALES","dpto":"CALDAS","dist_d2":86.8,"pnis_d2":"27660","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":1,"dist_d3":84.4,"pnis_d3":"27660","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":1},{"cod":"18001","mpio":"FLORENCIA","dpto":"CAQUETÁ","dist_d2":61,"pnis_d2":"18410","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":24.5,"pnis_d3":"18410","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"19001","mpio":"POPAYÁN","dpto":"CAUCA","dist_d2":41.9,"pnis_d2":"19473","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":23.6,"pnis_d3":"19256","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"20001","mpio":"VALLEDUPAR","dpto":"CESAR","dist_d2":118.7,"pnis_d2":"47460","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":143.9,"pnis_d3":"47460","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"23001","mpio":"MONTERÍA","dpto":"CÓRDOBA","dist_d2":35.2,"pnis_d2":"23090","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":40.6,"pnis_d3":"23090","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"25754","mpio":"SOACHA","dpto":"CUNDINAMARCA","dist_d2":166.2,"pnis_d2":"50370","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":148.8,"pnis_d3":"50370","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"41001","mpio":"NEIVA","dpto":"HUILA","dist_d2":93.5,"pnis_d2":"50370","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":1,"dist_d3":108.3,"pnis_d3":"50370","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"44001","mpio":"RIOHACHA","dpto":"LA GUAJIRA","dist_d2":58.2,"pnis_d2":"44560","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":58.1,"pnis_d3":"44560","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"44430","mpio":"MAICAO","dpto":"LA GUAJIRA","dist_d2":39,"pnis_d2":"44560","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":37.3,"pnis_d3":"44847","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"47001","mpio":"SANTA MARTA","dpto":"MAGDALENA","dist_d2":141.9,"pnis_d2":"47960","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":127.8,"pnis_d3":"47960","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"50001","mpio":"VILLAVICENCIO","dpto":"META","dist_d2":142.7,"pnis_d2":"50711","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":111.2,"pnis_d3":"50711","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"52001","mpio":"PASTO","dpto":"NARIÑO","dist_d2":49.2,"pnis_d2":"52411","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":31.3,"pnis_d3":"52411","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"54001","mpio":"SAN JOSÉ DE CÚCUTA","dpto":"NORTE DE SANTANDER","dist_d2":38.8,"pnis_d2":"54720","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":37.7,"pnis_d3":"54720","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"63001","mpio":"ARMENIA","dpto":"QUINDIO","dist_d2":79.9,"pnis_d2":"27660","est_d2_mediana":0,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":73.3,"pnis_d3":"27660","est_d3_mediana":0,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"66001","mpio":"PEREIRA","dpto":"RISARALDA","dist_d2":66,"pnis_d2":"27660","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":58.1,"pnis_d3":"27660","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"66170","mpio":"DOSQUEBRADAS","dpto":"RISARALDA","dist_d2":68.9,"pnis_d2":"27660","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":62.3,"pnis_d3":"27660","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"68001","mpio":"BUCARAMANGA","dpto":"SANTANDER","dist_d2":65.7,"pnis_d2":"54385","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":61.8,"pnis_d3":"54385","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"68081","mpio":"BARRANCABERMEJA","dpto":"SANTANDER","dist_d2":40.6,"pnis_d2":"13160","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":35.4,"pnis_d3":"13160","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"68276","mpio":"FLORIDABLANCA","dpto":"SANTANDER","dist_d2":75.3,"pnis_d2":"54385","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":67.6,"pnis_d3":"54385","est_d3_mediana":0,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"68307","mpio":"GIRÓN","dpto":"SANTANDER","dist_d2":73.8,"pnis_d2":"54385","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":65.4,"pnis_d3":"54385","est_d3_mediana":0,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"70001","mpio":"SINCELEJO","dpto":"SUCRE","dist_d2":108.7,"pnis_d2":"23419","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":98.7,"pnis_d3":"47703","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"73001","mpio":"IBAGUÉ","dpto":"TOLIMA","dist_d2":127.1,"pnis_d2":"27660","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":126.2,"pnis_d3":"27660","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":0},{"cod":"76001","mpio":"CALI","dpto":"VALLE DEL CAUCA","dist_d2":67.5,"pnis_d2":"19473","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":74,"pnis_d3":"19473","est_d3_mediana":0,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"76109","mpio":"BUENAVENTURA","dpto":"VALLE DEL CAUCA","dist_d2":69.2,"pnis_d2":"19418","est_d2_mediana":1,"est_d2_mean":1,"est_d2_p60":1,"est_d2_p75":1,"dist_d3":57.8,"pnis_d3":"27250","est_d3_mediana":1,"est_d3_mean":1,"est_d3_p60":1,"est_d3_p75":1},{"cod":"76520","mpio":"PALMIRA","dpto":"VALLE DEL CAUCA","dist_d2":100.8,"pnis_d2":"19473","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":0,"dist_d3":93.6,"pnis_d3":"19473","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":1},{"cod":"76834","mpio":"TULUÁ","dpto":"VALLE DEL CAUCA","dist_d2":84.4,"pnis_d2":"27745","est_d2_mediana":0,"est_d2_mean":0,"est_d2_p60":0,"est_d2_p75":1,"dist_d3":79.9,"pnis_d3":"27745","est_d3_mediana":0,"est_d3_mean":0,"est_d3_p60":0,"est_d3_p75":1}],"pnis":[{"cod":"05652","mpio":"SAN FRANCISCO","dpto":"ANTIOQUIA"},{"cod":"13062","mpio":"ARROYOHONDO","dpto":"BOLÍVAR"},{"cod":"13160","mpio":"CANTAGALLO","dpto":"BOLÍVAR"},{"cod":"18410","mpio":"LA MONTAÑITA","dpto":"CAQUETÁ"},{"cod":"19256","mpio":"EL TAMBO","dpto":"CAUCA"},{"cod":"19418","mpio":"LÓPEZ DE MICAY","dpto":"CAUCA"},{"cod":"19473","mpio":"MORALES","dpto":"CAUCA"},{"cod":"23090","mpio":"CANALETE","dpto":"CÓRDOBA"},{"cod":"23419","mpio":"LOS CÓRDOBAS","dpto":"CÓRDOBA"},{"cod":"23807","mpio":"TIERRALTA","dpto":"CÓRDOBA"},{"cod":"27250","mpio":"EL LITORAL DEL SAN JUAN","dpto":"CHOCÓ"},{"cod":"27660","mpio":"SAN JOSÉ DEL PALMAR","dpto":"CHOCÓ"},{"cod":"27745","mpio":"SIPÍ","dpto":"CHOCÓ"},{"cod":"27800","mpio":"UNGUÍA","dpto":"CHOCÓ"},{"cod":"44560","mpio":"MANAURE","dpto":"LA GUAJIRA"},{"cod":"44847","mpio":"URIBIA","dpto":"LA GUAJIRA"},{"cod":"47460","mpio":"NUEVA GRANADA","dpto":"MAGDALENA"},{"cod":"47703","mpio":"SAN ZENÓN","dpto":"MAGDALENA"},{"cod":"47960","mpio":"ZAPAYÁN","dpto":"MAGDALENA"},{"cod":"50370","mpio":"URIBE","dpto":"META"},{"cod":"50711","mpio":"VISTAHERMOSA","dpto":"META"},{"cod":"52411","mpio":"LINARES","dpto":"NARIÑO"},{"cod":"54385","mpio":"LA ESPERANZA","dpto":"NORTE DE SANTANDER"},{"cod":"54720","mpio":"SARDINATA","dpto":"NORTE DE SANTANDER"}],"indicadores":[{"id":"d2","nombre":"d2_eucl","origen":"Centroide → centroide","subtitulo":"Distancia euclidiana (línea recta) del centroide municipal al centroide del municipio PNIS de alta probabilidad más cercano, respecto ","cortes":[{"var":"mediana","titulo":"Mediana (p50)","texto":"a la mediana","km":75.3,"n_trat":19,"n_ctrl":18},{"var":"mean","titulo":"Media","texto":"a la media","km":82.4,"n_trat":23,"n_ctrl":14},{"var":"p60","titulo":"Percentil 60","texto":"al percentil 60","km":81.8,"n_trat":23,"n_ctrl":14},{"var":"p75","titulo":"Percentil 75","texto":"al percentil 75","km":93.5,"n_trat":28,"n_ctrl":9}]},{"id":"d3","nombre":"d3_eucl","origen":"Cabecera → cabecera","subtitulo":"Distancia euclidiana (línea recta) de la cabecera municipal a la cabecera del municipio PNIS de alta probabilidad más cercano, respecto ","cortes":[{"var":"mediana","titulo":"Mediana (p50)","texto":"a la mediana","km":64.8,"n_trat":19,"n_ctrl":18},{"var":"mean","titulo":"Media","texto":"a la media","km":76.9,"n_trat":23,"n_ctrl":14},{"var":"p60","titulo":"Percentil 60","texto":"al percentil 60","km":74,"n_trat":23,"n_ctrl":14},{"var":"p75","titulo":"Percentil 75","texto":"al percentil 75","km":93.6,"n_trat":28,"n_ctrl":9}]}]};
+
+  const COLOR = { 1: "#9ECAE1", 0: "#FCAE91" };
+  const GRUPO = { 1: "Tratado", 0: "Control" };
+  const NS = "http://www.w3.org/2000/svg";
+
+  const nombre = p => p.mpio + " (" + p.dpto + ")";
+  const km = x => x.toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const pnisPorCodigo = {};
+  DATOS.pnis.forEach(p => { pnisPorCodigo[p.cod] = p; });
+
+  let indicador = DATOS.indicadores[0];
+  let corte = indicador.cortes[0];
+  const dist = p => p["dist_" + indicador.id];
+  const estatus = p => p["est_" + indicador.id + "_" + corte.var];
+
+  // Escala vertical común a d2 y d3 para que las barras sean comparables entre indicadores
+  const maxDist = Math.max(...DATOS.muestra.map(p => Math.max(p.dist_d2, p.dist_d3)));
+  const PASO_Y = 50;
+  const yMax = Math.ceil(maxDist / PASO_Y) * PASO_Y;
+
+  // Ancho de texto para reservar márgenes a las etiquetas inclinadas
+  const regla = document.createElement("canvas").getContext("2d");
+  regla.font = "11px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+  const ancho = s => regla.measureText(s).width;
+  // Ancho de la distancia más larga ("000,0") con fuente de 10 px
+  const ANCHO_VALOR = ancho("000,0") * 10 / 11;
+  const SEN45 = Math.SQRT1_2;
+
+  const grafico = document.getElementById("grafico");
+  const svg = document.getElementById("barras");
+  const tip = document.getElementById("tip");
+  const ficha = document.getElementById("ficha");
+  let activa = null;
+
+  function el(tipo, atributos, padre) {
+    const e = document.createElementNS(NS, tipo);
+    Object.entries(atributos).forEach(([k, v]) => e.setAttribute(k, v));
+    if (padre) padre.appendChild(e);
+    return e;
+  }
+
+  // Barra con esquinas superiores redondeadas, anclada a la línea base
+  function barra(x, y, w, h) {
+    const r = Math.min(3, w / 2, h);
+    return "M" + x + "," + (y + h) + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y +
+           "H" + (x + w - r) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + r) + "V" + (y + h) + "Z";
+  }
+
+  // ---- Ficha del municipio (mismo contenido que el mapa interactivo) ----
+
+  function fichaMuestra(p) {
+    const est = estatus(p);
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      '<div class="pop-fila"><span class="chip chip-' + est + '">' + GRUPO[est] + '</span> con corte ' + corte.titulo +
+      ' (' + indicador.nombre + ')</div>' +
+      '<div class="pop-fila">Distancia al PNIS más cercano: <b>' + km(dist(p)) + ' km</b></div>' +
+      '<div class="pop-fila">PNIS más cercano: ' + nombre(pnisPorCodigo[p["pnis_" + indicador.id]]) + '</div>';
+  }
+
+  function cerrarFicha() {
+    ficha.style.display = "none";
+    if (activa) activa.classList.remove("activa");
+    activa = null;
+  }
+
+  function abrirFicha(col, p, x, yTope) {
+    cerrarFicha();
+    tip.style.display = "none";
+    activa = col;
+    col.classList.add("activa");
+    document.getElementById("ficha-contenido").innerHTML = fichaMuestra(p);
+    ficha.style.display = "block";
+    const w = ficha.offsetWidth, h = ficha.offsetHeight;
+    const W = svg.width.baseVal.value;
+    let top = yTope - h - 12;
+    if (top < 4) top = yTope + 12;
+    ficha.style.left = Math.min(Math.max(x - w / 2, 4), W - w - 4) + "px";
+    ficha.style.top = top + "px";
+    ficha.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  document.getElementById("ficha-cerrar").addEventListener("click", cerrarFicha);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") cerrarFicha(); });
+  svg.addEventListener("click", e => { if (!e.target.closest(".col")) cerrarFicha(); });
+
+  function moverTip(e) {
+    const r = grafico.getBoundingClientRect();
+    tip.style.left = (e.clientX - r.left + grafico.scrollLeft + 12) + "px";
+    tip.style.top = (e.clientY - r.top + grafico.scrollTop - 30) + "px";
+  }
+
+  // ---- Gráfico ----
+
+  function dibujar() {
+    cerrarFicha();
+    svg.textContent = "";
+    const orden = DATOS.muestra.slice().sort((a, b) => dist(a) - dist(b) || a.cod.localeCompare(b.cod));
+    const n = orden.length;
+
+    const largo = Math.max(...orden.map(p => ancho(p.mpio)));
+    const mt = 44, mr = 16;
+    const mb = Math.ceil(largo * SEN45) + 22;
+    const ml = Math.max(64, Math.ceil(ancho(orden[0].mpio) * SEN45) + 12);
+    // Ancho mínimo: las distancias sobre barras vecinas no se tocan (fuente de al menos 9 px)
+    const W = Math.max(grafico.clientWidth, ml + mr + n * (0.9 * ANCHO_VALOR + 5));
+    const H = Math.max(grafico.clientHeight, 500);
+    const pw = W - ml - mr, ph = H - mt - mb;
+    const paso = pw / n;
+    const bw = paso - Math.max(2, paso * 0.2);
+    const fuenteValor = Math.min(10.5, 10 * (paso - 5) / ANCHO_VALOR);
+    const base = mt + ph;
+    const y = v => base - v / yMax * ph;
+
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+    // Rejilla y eje vertical
+    const eje = el("g", { "aria-hidden": "true" }, svg);
+    for (let v = 0; v <= yMax; v += PASO_Y) {
+      el("line", { x1: ml, x2: W - mr, y1: y(v), y2: y(v), stroke: v === 0 ? "#262626" : "#ebebeb", "stroke-width": 1 }, eje);
+      el("text", { class: "eje", x: ml - 8, y: y(v) + 4, "text-anchor": "end" }, eje).textContent = v;
+    }
+    el("text", { class: "eje", transform: "translate(16," + (mt + ph / 2) + ") rotate(-90)", "text-anchor": "middle" }, eje)
+      .textContent = "Distancia al PNIS más cercano (km)";
+
+    // Barras: una columna por municipio (zona de clic de toda la altura)
+    orden.forEach((p, i) => {
+      const cx = ml + paso * (i + 0.5);
+      const v = dist(p), est = estatus(p);
+      const col = el("g", { class: "col", tabindex: 0, role: "button",
+                            "aria-label": nombre(p) + ": " + km(v) + " km, " + GRUPO[est] }, svg);
+      el("rect", { x: cx - paso / 2, y: mt - 20, width: paso, height: H - mt + 20, fill: "transparent" }, col);
+      el("path", { class: "barra", d: barra(cx - bw / 2, y(v), bw, base - y(v)), fill: COLOR[est] }, col);
+      el("text", { class: "valor", x: cx, y: y(v) - 5, "text-anchor": "middle", "font-size": fuenteValor }, col)
+        .textContent = km(v);
+      el("text", { class: "nombre", x: cx + 3, y: base + 12, "text-anchor": "end",
+                   transform: "rotate(-45 " + (cx + 3) + " " + (base + 12) + ")" }, col).textContent = p.mpio;
+
+      col.addEventListener("mouseenter", e => {
+        if (activa) return;
+        tip.textContent = nombre(p);
+        tip.style.display = "block";
+        moverTip(e);
+      });
+      col.addEventListener("mousemove", e => { if (!activa) moverTip(e); });
+      col.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+      col.addEventListener("click", () => abrirFicha(col, p, cx, y(v)));
+      col.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirFicha(col, p, cx, y(v)); }
+      });
+    });
+
+    // Línea punteada roja entre el último tratado y el primer control
+    if (corte.n_trat > 0 && corte.n_trat < n) {
+      const xl = ml + paso * corte.n_trat;
+      const limite = el("g", { "aria-hidden": "true", "pointer-events": "none" }, svg);
+      el("line", { x1: xl, x2: xl, y1: mt - 18, y2: base + 4, stroke: "#D7191C", "stroke-width": 2,
+                   "stroke-dasharray": "0.1 4", "stroke-linecap": "round" }, limite);
+      // Etiqueta a la derecha de la línea; a la izquierda si no cabe
+      const etiqueta = el("text", { x: xl + 6, y: mt - 22, "font-size": 11.5, "font-weight": 600, fill: "#1a1a1a" }, limite);
+      etiqueta.textContent = "Punto de corte: " + km(corte.km) + " km";
+      if (xl + 6 + etiqueta.getComputedTextLength() > W - mr) {
+        etiqueta.setAttribute("x", xl - 6);
+        etiqueta.setAttribute("text-anchor", "end");
+      }
+    }
+  }
+
+  // ---- Panel: selectores de indicador y de punto de corte ----
+
+  function botones(contenedor, opciones, contenido, accion) {
+    opciones.forEach(o => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = contenido(o);
+      b.addEventListener("click", () => accion(o));
+      o._boton = b;
+      contenedor.appendChild(b);
+    });
+  }
+
+  botones(document.getElementById("sel-indicador"), DATOS.indicadores,
+          i => "<code>" + i.nombre + "</code><small>" + i.origen + "</small>",
+          i => { indicador = i; corte = i.cortes.find(c => c.var === corte.var); actualizar(); });
+
+  // Los botones de corte se identifican por variable; los valores dependen del indicador
+  const cortesBase = DATOS.indicadores[0].cortes;
+  botones(document.getElementById("sel-corte"), cortesBase, c => c.titulo,
+          c => { corte = indicador.cortes.find(k => k.var === c.var); actualizar(); });
+
+  function actualizar() {
+    DATOS.indicadores.forEach(i => i._boton.setAttribute("aria-pressed", i === indicador));
+    cortesBase.forEach(c => c._boton.setAttribute("aria-pressed", c.var === corte.var));
+    const v = indicador.nombre + "_" + corte.var;
+    document.getElementById("indicador-titulo").textContent = "Indicador: " + indicador.nombre + " (" + indicador.origen.toLowerCase() + ")";
+    document.getElementById("corte-titulo").textContent = "Punto de corte: " + corte.titulo;
+    document.getElementById("subtitulo").textContent = indicador.subtitulo + corte.texto + " (" + km(corte.km) + " km).";
+    document.getElementById("encabezado-texto").innerHTML =
+      "<b>" + indicador.nombre + "</b> · " + indicador.origen + " · Punto de corte: <b>" + corte.titulo +
+      " = " + km(corte.km) + " km</b><br>Municipios ordenados de menor (izquierda) a mayor (derecha) distancia";
+    document.getElementById("conteo").innerHTML =
+      "N = " + (corte.n_trat + corte.n_ctrl) + "<br># Tratados: " + corte.n_trat + "<br># Controles: " + corte.n_ctrl;
+    document.getElementById("ley-tratados").innerHTML = "Tratados (cerca: <code>" + v + "</code> = 1)";
+    document.getElementById("ley-controles").innerHTML = "Controles (lejos: <code>" + v + "</code> = 0)";
+    dibujar();
+  }
+
+  let espera;
+  window.addEventListener("resize", () => { clearTimeout(espera); espera = setTimeout(dibujar, 120); });
+
+  actualizar();
+</script>
+</body>
+</html>
