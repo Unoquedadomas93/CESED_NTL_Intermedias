@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<!-- Plantilla de mapa_interactivo_d2.R: las marcas /*__...__*/ se reemplazan por Leaflet y los datos -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tratados y controles d2</title>
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+  :root {
+    --tratados: #9ECAE1;
+    --controles: #FCAE91;
+    --pnis: #A1D99B;
+    --tratados-osc: #08306B;
+    --controles-osc: #67000D;
+    --pnis-osc: #00441B;
+    --enlace-tratado: #262626;
+    --enlace-control: #8B0000;
+    --resalte: #E00000;
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --panel: #f6f6f6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, subtítulo, selector y convenciones */
+  #panel {
+    width: 340px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+  #corte-titulo { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  .seccion { margin-top: 18px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave); margin-bottom: 7px;
+  }
+  #selector { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #selector button {
+    font: inherit; font-size: 13px; padding: 8px 6px; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+  }
+  #selector button:hover { border-color: var(--tratados-osc); }
+  #selector button[aria-pressed="true"] {
+    background: var(--tratados-osc); border-color: var(--tratados-osc); color: #fff; font-weight: 600;
+  }
+  #selector button:focus-visible { outline: 2px solid var(--tratados-osc); outline-offset: 2px; }
+  #conteo {
+    background: #fff; border: 1px solid #bdbdbd; padding: 8px 12px;
+    font-size: 14px; line-height: 1.6; font-variant-numeric: tabular-nums;
+  }
+  /* Interruptores de resaltado de vecinos (excluyentes: a lo sumo uno encendido) */
+  #resaltes { display: grid; gap: 6px; }
+  #resaltes button {
+    font: inherit; font-size: 13px; padding: 8px 10px; cursor: pointer; color: var(--texto); text-align: left;
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  #resaltes button:hover { border-color: var(--resalte); }
+  #resaltes button[aria-pressed="true"] { border-color: var(--resalte); box-shadow: inset 0 0 0 1px var(--resalte); font-weight: 600; }
+  #resaltes button:focus-visible { outline: 2px solid var(--resalte); outline-offset: 2px; }
+  .interruptor { position: relative; width: 26px; height: 15px; flex: none; border-radius: 8px; background: #c4c4c4; transition: background .15s; }
+  .interruptor::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  [aria-pressed="true"] .interruptor { background: var(--resalte); }
+  [aria-pressed="true"] .interruptor::after { transform: translateX(11px); }
+  #resalte-detalle { margin-top: 8px; }
+  #resalte-detalle ul { margin: 3px 0 0; padding-left: 16px; }
+  [hidden] { display: none !important; }
+
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
+  .leyenda-item svg { flex: none; }
+  .caja { width: 22px; height: 14px; flex: none; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+  code { font-family: Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Mapa: fondo blanco, sin teselas */
+  #contenedor { flex: 1; position: relative; min-width: 0; }
+  #mapa { position: absolute; inset: 0; background: #fff; }
+  .leaflet-container { background: #fff; font-family: inherit; }
+  /* Los SVG de cada panel no bloquean el mouse; solo los trazos interactivos lo reciben */
+  .leaflet-pane > svg { pointer-events: none; }
+
+  /* Rosa de los vientos fija (no se mueve ni cambia de tamaño con el mapa) */
+  #rosa { position: absolute; top: 14px; right: 14px; width: 86px; height: 86px; z-index: 1000; pointer-events: none; }
+
+  /* Ventana emergente (banner) de cada municipio */
+  .leaflet-popup-content { margin: 10px 13px; font-size: 13px; line-height: 1.45; }
+  .pop-nombre { font-weight: 700; font-size: 14.5px; }
+  .pop-dpto { color: var(--texto-suave); margin-bottom: 7px; }
+  .pop-fila { margin-top: 3px; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 3px; font-weight: 600; font-size: 12px; }
+  .chip-1 { background: var(--tratados); color: var(--tratados-osc); }
+  .chip-0 { background: var(--controles); color: var(--controles-osc); }
+  .chip-pnis { background: var(--pnis); color: var(--pnis-osc); }
+  .pop-lista { margin: 3px 0 0; padding-left: 16px; }
+  .leaflet-tooltip { font-size: 12.5px; font-weight: 600; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; }
+    #panel { width: 100%; height: auto; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { flex: 1; min-height: 55vh; }
+    #rosa { width: 64px; height: 64px; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="panel">
+  <h1>Municipios tratados, de control y PNIS más cercano</h1>
+  <div id="corte-titulo"></div>
+  <p id="subtitulo"></p>
+
+  <div class="seccion">
+    <div class="etiqueta">Punto de corte</div>
+    <div id="selector" role="group" aria-label="Punto de corte"></div>
+  </div>
+
+  <div class="seccion">
+    <div id="conteo"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Vecinos en la muestra</div>
+    <div id="resaltes" role="group" aria-label="Resaltar vecinos">
+      <button type="button" data-modo="vecinos" aria-pressed="false"><span class="interruptor" aria-hidden="true"></span>Resaltar vecinos</button>
+      <button type="button" data-modo="opuestos" aria-pressed="false"><span class="interruptor" aria-hidden="true"></span>Resaltar controles vecinos de un tratado</button>
+    </div>
+    <div id="resalte-detalle" class="nota" hidden></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Convenciones</div>
+    <div class="leyenda-item"><span class="caja" style="background: var(--tratados)"></span><span id="ley-tratados"></span></div>
+    <div class="leyenda-item"><span class="caja" style="background: var(--controles)"></span><span id="ley-controles"></span></div>
+    <div class="leyenda-item"><span class="caja" style="background: var(--pnis)"></span><span>PNIS alta probabilidad más cercano</span></div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#262626" stroke-width="1.3"/><path d="M14,1.5 L21,5 L14,8.5 z" fill="#262626"/></svg>
+      <span>Línea recta tratado → PNIS más cercano</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#8B0000" stroke-width="1.6" stroke-dasharray="1.5 2.5" stroke-linecap="round"/></svg>
+      <span>Línea recta control → PNIS más cercano</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><circle cx="11" cy="5" r="2.5" fill="#262626"/></svg>
+      <span>Centroide municipal</span>
+    </div>
+    <div class="leyenda-item" id="ley-vecinos" hidden>
+      <svg width="22" height="14" aria-hidden="true"><rect x="2" y="2" width="18" height="10" fill="none" stroke="#E00000" stroke-width="3"/></svg>
+      <span id="ley-vecinos-texto"></span>
+    </div>
+  </div>
+
+  <div class="seccion nota">
+    <p>Pase el cursor sobre un municipio coloreado para ver su nombre y haga clic para ver su ficha. Acerque o aleje con la rueda del ratón o los botones + / −, y arrastre para desplazarse.</p>
+    <p>Fuente: MGN 2021 (DANE). Indicadores <code>d2_eucl_*</code> de Master.do (sección 4.1), muestra de 37 ciudades intermedias sin municipios PNIS de alta probabilidad. Fronteras simplificadas (/*__TOLERANCIA__*/ m) para aligerar el archivo; los centroides y distancias usan las geometrías originales.</p>
+    <p>Vecinos: municipios de la muestra que comparten frontera o vértice en el MGN 2021 (sin contar los PNIS), como en las Tablas 6.4 y 6.5 (<code>tablas_vecinos.R</code>). Los controles vecinos de un tratado son los pares con estatus opuesto en el punto de corte seleccionado.</p>
+  </div>
+</aside>
+
+<main id="contenedor">
+  <div id="mapa"></div>
+  <svg id="rosa" viewBox="-50 -50 100 100" role="img" aria-label="Rosa de los vientos: norte hacia arriba">
+    <circle r="29" fill="#fff" fill-opacity="0.9" stroke="#262626" stroke-width="0.8"/>
+    <circle r="22" fill="none" stroke="#262626" stroke-width="0.4"/>
+    <g stroke="#262626" stroke-width="0.6" stroke-linejoin="round">
+      <g transform="rotate(45)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(135)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(225)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(315)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(90)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(180)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(270)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+    </g>
+    <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle" fill="#1a1a1a">
+      <text x="0" y="-38" font-size="12">N</text>
+      <text x="0" y="48" font-size="9">S</text>
+      <text x="43" y="3.5" font-size="9">E</text>
+      <text x="-43" y="3.5" font-size="9">O</text>
+    </g>
+  </svg>
+</main>
+
+<script>/*__LEAFLET_JS__*/</script>
+<script>
+  "use strict";
+
+  const DATOS = /*__DATOS__*/;
+
+  const COLOR = { 1: "#9ECAE1", 0: "#FCAE91", pnis: "#A1D99B" };
+  const GRUPO = { 1: "Tratado", 0: "Control" };
+  const SUBTITULO = "Distancia euclidiana (línea recta) del centroide municipal al centroide " +
+                    "del municipio PNIS de alta probabilidad más cercano, respecto ";
+
+  const nombre = p => p.mpio + " (" + p.dpto + ")";
+  const km = x => x.toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const pnisPorCodigo = {};
+  DATOS.pnis.features.forEach(f => { pnisPorCodigo[f.properties.cod] = f.properties; });
+
+  let corte = DATOS.cortes[0];
+  const estatus = p => p["est_" + corte.var];
+
+  // ---- Mapa: solo zoom y desplazamiento (Leaflet no rota el mapa) ----
+
+  const mapa = L.map("mapa", {
+    zoomSnap: 0.25, zoomDelta: 0.5, maxZoom: 14,
+    maxBounds: [[-10, -90], [18, -58]], maxBoundsViscosity: 1,
+    attributionControl: false
+  });
+  mapa.fitBounds([[-4.25, -79.05], [12.5, -66.85]]);
+  mapa.setMinZoom(mapa.getZoom() - 1);
+  L.control.scale({ metric: true, imperial: false, position: "bottomleft" }).addTo(mapa);
+
+  // Capas en el mismo orden que los mapas estáticos: rellenos, fronteras, enlaces y centroides;
+  // los vecinos resaltados van sobre las fronteras y bajo los enlaces
+  [["rellenos", 410], ["fronteras", 420], ["vecinos", 425], ["enlaces", 430], ["puntos", 440]].forEach(([n, z]) => {
+    mapa.createPane(n).style.zIndex = z;
+  });
+  mapa.getPane("fronteras").style.pointerEvents = "none";
+  mapa.getPane("vecinos").style.pointerEvents = "none";
+
+  // ---- Rellenos interactivos: municipios de la muestra y PNIS alta probabilidad ----
+
+  const resaltar = e => e.target.setStyle({ stroke: true, color: "#000", weight: 2.5, opacity: 1 });
+  const normal   = e => e.target.setStyle({ stroke: false });
+
+  function fichaMuestra(p) {
+    const est = estatus(p);
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      '<div class="pop-fila"><span class="chip chip-' + est + '">' + GRUPO[est] + '</span> con corte ' + corte.titulo + '</div>' +
+      '<div class="pop-fila">Distancia al PNIS más cercano: <b>' + km(p.dist) + ' km</b></div>' +
+      '<div class="pop-fila">PNIS más cercano: ' + nombre(pnisPorCodigo[p.pnis]) + '</div>';
+  }
+
+  function fichaPnis(p) {
+    const ciudades = DATOS.muestra.features.map(f => f.properties).filter(c => c.pnis === p.cod);
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      '<div class="pop-fila"><span class="chip chip-pnis">PNIS alta probabilidad</span></div>' +
+      '<div class="pop-fila">PNIS más cercano para (corte ' + corte.titulo + '):</div>' +
+      '<ul class="pop-lista">' + ciudades.map(c =>
+        '<li>' + nombre(c) + ' · ' + GRUPO[estatus(c)] + ', ' + km(c.dist) + ' km</li>').join("") + '</ul>';
+  }
+
+  function interactivo(ficha) {
+    return (f, capa) => {
+      capa.bindTooltip(nombre(f.properties), { sticky: true, direction: "top", offset: [0, -8] });
+      capa.bindPopup(() => ficha(f.properties), { maxWidth: 300 });
+      capa.on({ mouseover: resaltar, mouseout: normal });
+    };
+  }
+
+  const svgRellenos = L.svg({ pane: "rellenos" });
+  const estiloRelleno = color => ({ renderer: svgRellenos, stroke: false, fillColor: color, fillOpacity: 1 });
+
+  const capaMuestra = L.geoJSON(DATOS.muestra, {
+    pane: "rellenos",
+    style: f => estiloRelleno(COLOR[estatus(f.properties)]),
+    onEachFeature: interactivo(fichaMuestra)
+  }).addTo(mapa);
+
+  L.geoJSON(DATOS.pnis, {
+    pane: "rellenos",
+    style: () => estiloRelleno(COLOR.pnis),
+    onEachFeature: interactivo(fichaPnis)
+  }).addTo(mapa);
+
+  // ---- Fronteras municipales (canvas, sin interacción) ----
+
+  L.geoJSON(DATOS.fondo, {
+    pane: "fronteras", interactive: false,
+    renderer: L.canvas({ pane: "fronteras", padding: 0.5 }),
+    style: { color: "#000", weight: 0.5, opacity: 0.85 }
+  }).addTo(mapa);
+
+  // ---- Enlaces ciudad → PNIS más cercano (flecha para tratados, punteado para controles) ----
+
+  const svgEnlaces = L.svg({ pane: "enlaces" });
+  const capaEnlaces = L.layerGroup().addTo(mapa);
+
+  // Punta de flecha de tamaño fijo en pantalla; refX > 10 deja un espacio antes del centroide PNIS
+  function definirFlecha() {
+    const svg = svgEnlaces._container;
+    if (!svg || svg.querySelector("#flecha")) return;
+    const ns = "http://www.w3.org/2000/svg";
+    const defs = document.createElementNS(ns, "defs");
+    const marca = document.createElementNS(ns, "marker");
+    const atributos = { id: "flecha", viewBox: "0 0 10 10", refX: 14, refY: 5,
+                        markerWidth: 7, markerHeight: 7, markerUnits: "userSpaceOnUse", orient: "auto" };
+    Object.entries(atributos).forEach(([k, v]) => marca.setAttribute(k, v));
+    const punta = document.createElementNS(ns, "path");
+    punta.setAttribute("d", "M0,0 L10,5 L0,10 z");
+    punta.setAttribute("fill", "#262626");
+    marca.appendChild(punta);
+    defs.appendChild(marca);
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  function dibujarEnlaces() {
+    capaEnlaces.clearLayers();
+    DATOS.muestra.features.forEach(f => {
+      const p = f.properties;
+      const d = pnisPorCodigo[p.pnis];
+      const tratado = estatus(p) === 1;
+      const linea = L.polyline([[p.cy, p.cx], [d.cy, d.cx]], {
+        renderer: svgEnlaces, pane: "enlaces", interactive: false,
+        color: tratado ? "#262626" : "#8B0000",
+        weight: tratado ? 1.3 : 1.6,
+        dashArray: tratado ? null : "1.5 3.5",
+        lineCap: "round"
+      }).addTo(capaEnlaces);
+      if (tratado) {
+        definirFlecha();
+        linea._path.setAttribute("marker-end", "url(#flecha)");
+      }
+    });
+  }
+
+  // ---- Centroides (ciudades y PNIS) ----
+
+  const svgPuntos = L.svg({ pane: "puntos" });
+  [DATOS.muestra, DATOS.pnis].forEach(capa => capa.features.forEach(f => {
+    L.circleMarker([f.properties.cy, f.properties.cx], {
+      renderer: svgPuntos, pane: "puntos", interactive: false,
+      radius: 2.2, stroke: false, fillColor: "#262626", fillOpacity: 1
+    }).addTo(mapa);
+  }));
+
+  // ---- Vecinos resaltados: contorno rojo de los municipios de la muestra en los pares elegidos ----
+
+  const ROJO = "#E00000";
+  const muestraPorCodigo = {};
+  DATOS.muestra.features.forEach(f => { muestraPorCodigo[f.properties.cod] = f.properties; });
+
+  // null (apagado), "vecinos" (todos los pares) u "opuestos" (estatus distinto con el corte vigente)
+  let resalte = null;
+
+  const capaVecinos = L.geoJSON(DATOS.muestra, {
+    pane: "vecinos", interactive: false,
+    renderer: L.svg({ pane: "vecinos" }),
+    style: { stroke: false, fill: false, color: ROJO, weight: 4, opacity: 1, lineJoin: "round" }
+  }).addTo(mapa);
+
+  const resaltes = document.getElementById("resaltes");
+  resaltes.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    resalte = resalte === b.dataset.modo ? null : b.dataset.modo;
+    dibujarVecinos();
+  }));
+
+  function dibujarVecinos() {
+    resaltes.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.modo === resalte));
+
+    let pares = resalte ? DATOS.vecinos : [];
+    if (resalte === "opuestos") {
+      // Cada par se ordena tratado–control, en el orden de la Tabla 6.5
+      pares = pares.map(par => par.map(c => muestraPorCodigo[c]))
+        .filter(([a, b]) => estatus(a) !== estatus(b))
+        .map(([a, b]) => estatus(a) === 1 ? [a, b] : [b, a])
+        .sort(([a1, b1], [a2, b2]) => a1.cod.localeCompare(a2.cod) || b1.cod.localeCompare(b2.cod))
+        .map(([a, b]) => [a.cod, b.cod]);
+    }
+    const cods = new Set(pares.flat());
+    capaVecinos.setStyle(f => ({ stroke: cods.has(f.properties.cod) }));
+
+    const detalle = document.getElementById("resalte-detalle");
+    const leyenda = document.getElementById("ley-vecinos");
+    detalle.hidden = leyenda.hidden = !resalte;
+    if (resalte === "vecinos") {
+      detalle.textContent = pares.length + " pares de municipios vecinos (" + cods.size +
+        " municipios). No depende del punto de corte.";
+      document.getElementById("ley-vecinos-texto").textContent = "Municipio con vecinos en la muestra";
+    } else if (resalte === "opuestos") {
+      detalle.innerHTML = "Corte " + corte.titulo + ": " + pares.length + " par" + (pares.length === 1 ? "" : "es") +
+        " tratado–control (" + cods.size + " municipios)" + (pares.length ? ":" : ".") +
+        "<ul>" + pares.map(([t, c]) =>
+          "<li>" + muestraPorCodigo[t].mpio + " (tratado) – " + muestraPorCodigo[c].mpio + " (control)</li>").join("") + "</ul>";
+      document.getElementById("ley-vecinos-texto").textContent = "Par de vecinos tratado–control";
+    }
+  }
+
+  // ---- Panel: selector de punto de corte ----
+
+  const selector = document.getElementById("selector");
+  DATOS.cortes.forEach(c => {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.textContent = c.titulo;
+    boton.dataset.var = c.var;
+    boton.addEventListener("click", () => seleccionar(c));
+    selector.appendChild(boton);
+  });
+
+  function seleccionar(c) {
+    corte = c;
+    mapa.closePopup();
+    selector.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.var === c.var));
+    document.getElementById("corte-titulo").textContent = "Punto de corte: " + c.titulo;
+    document.getElementById("subtitulo").textContent = SUBTITULO + c.texto + " (" + km(c.km) + " km).";
+    document.getElementById("conteo").innerHTML =
+      "N = " + (c.n_trat + c.n_ctrl) + "<br># Tratados: " + c.n_trat + "<br># Controles: " + c.n_ctrl;
+    document.getElementById("ley-tratados").textContent = "Tratados (cerca: d2_eucl_" + c.var + " = 1)";
+    document.getElementById("ley-controles").textContent = "Controles (lejos: d2_eucl_" + c.var + " = 0)";
+    capaMuestra.setStyle(f => ({ fillColor: COLOR[estatus(f.properties)] }));
+    dibujarEnlaces();
+    dibujarVecinos();
+  }
+
+  seleccionar(corte);
+</script>
+</body>
+</html>
