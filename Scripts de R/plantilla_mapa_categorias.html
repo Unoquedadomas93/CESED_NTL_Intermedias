@@ -398,14 +398,15 @@
     if (!filas.length) {
       html += '<tr><td colspan="3" class="vacio">Ninguna categoría activa.</td></tr>';
     } else {
-      // Superposiciones: una fila por cada par de categorías activas (n activas → n(n−1)/2 filas),
-      // con los municipios que pertenecen a ambas (pueden pertenecer además a otras)
+      // Superposiciones: una fila por cada par de categorías activas con municipios en común
+      // (pueden pertenecer además a otras); los pares sin municipios en común no se muestran
       for (let i = 0; i < activas.length; i++) {
         for (let j = i + 1; j < activas.length; j++) {
           const a = activas[i], b = activas[j];
           const n = props.filter(p => p[a.k] === 1 && p[b.k] === 1).length;
+          if (!n) continue;
           const sw = muestraColor([a, b].filter(c => c.relleno).map(c => c.k), contornoDe([a.k, b.k]));
-          html += '<tr class="superposicion' + (n ? '' : ' vacia') + '"><td class="sw">' + sw + '</td><td>Superposición ' +
+          html += '<tr class="superposicion"><td class="sw">' + sw + '</td><td>Superposición ' +
             a.corto + ' ∩ ' + b.corto + '</td><td class="n">' + miles(n) + '</td></tr>';
         }
       }
@@ -418,9 +419,10 @@
       html += '<tr class="total"><td></td><td>Municipios coloreados</td><td class="n">' + miles(visibles) + '</td></tr>';
     }
 
-    html += '<tr><td colspan="3" class="subtitulo-tabla">Por categoría (de ' + miles(DATOS.total) + ' municipios de Colombia continental)</td></tr>';
-    CATEGORIAS.forEach(c => {
-      html += '<tr class="' + (c.activa ? "" : "apagada") + '"><td class="sw">' + muestraCategoria(c) + '</td><td>' + c.corto + '</td><td class="n">' + miles(total[c.k]) + '</td></tr>';
+    // Totales solo de las categorías activas
+    if (activas.length) html += '<tr><td colspan="3" class="subtitulo-tabla">Por categoría</td></tr>';
+    activas.forEach(c => {
+      html += '<tr><td class="sw">' + muestraCategoria(c) + '</td><td>' + c.corto + '</td><td class="n">' + miles(total[c.k]) + '</td></tr>';
     });
     html += "</tbody></table>";
     document.getElementById("conteo").innerHTML = html;
