@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<!-- Plantilla de mapa_interactivo_categorias.R: las marcas /*__...__*/ se reemplazan por Leaflet y los datos -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Categorías municipales PDET y PNIS</title>
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+  :root {
+    /* Categorías con relleno: tres tonos categóricos validados en todos los pares (mapa coroplético)
+       y un gris neutro para PNIS baja probabilidad, que cubre casi todo el país */
+    --m37: #2a78d6;
+    --pdet: #1baf7a;
+    --alta: #eb6834;
+    --baja: #c9c8c2;
+    /* Intermedias excluidas: contorno (no relleno), siempre PNIS alta probabilidad */
+    --exc: #111111;
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --panel: #f6f6f6;
+    --acento: #1a1a1a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, interruptores, conteo y convenciones */
+  #panel {
+    width: 360px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 8px; text-wrap: balance; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  .seccion { margin-top: 18px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave); margin-bottom: 7px;
+  }
+
+  /* Interruptores de categorías (independientes) */
+  #capas { display: grid; gap: 6px; }
+  #capas button {
+    font: inherit; font-size: 13px; line-height: 1.3; padding: 8px 10px; cursor: pointer; color: var(--texto);
+    text-align: left; background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  #capas button:hover { border-color: var(--acento); }
+  #capas button[aria-pressed="true"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+  #capas button[aria-pressed="false"] .muestra-color { opacity: .35; }
+  #capas button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  .interruptor { position: relative; width: 26px; height: 15px; flex: none; border-radius: 8px; background: #c4c4c4; transition: background .15s; }
+  .interruptor::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  [aria-pressed="true"] .interruptor { background: var(--acento); }
+  [aria-pressed="true"] .interruptor::after { transform: translateX(11px); }
+  .muestra-color { flex: none; display: block; }
+
+  /* Caja de conteo */
+  #conteo {
+    background: #fff; border: 1px solid #bdbdbd; padding: 10px 12px;
+    font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums;
+  }
+  #conteo table { width: 100%; border-collapse: collapse; }
+  #conteo td { padding: 3px 0; vertical-align: middle; }
+  #conteo td.n { text-align: right; font-weight: 600; padding-left: 10px; white-space: nowrap; }
+  #conteo td.sw { width: 30px; }
+  #conteo tr.apagada td { color: #9a9a9a; }
+  #conteo tr.apagada td.n { font-weight: 400; }
+  #conteo tr.apagada .muestra-color { opacity: .35; }
+  #conteo .subtitulo-tabla { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding-top: 10px; }
+  #conteo tr.total td { border-top: 1px solid var(--borde); padding-top: 6px; }
+  #conteo .vacio { color: var(--texto-suave); font-style: italic; }
+
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
+  .leyenda-item svg { flex: none; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+  code { font-family: Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Mapa: fondo blanco, sin teselas */
+  #contenedor { flex: 1; position: relative; min-width: 0; }
+  #mapa { position: absolute; inset: 0; background: #fff; }
+  .leaflet-container { background: #fff; font-family: inherit; }
+  .leaflet-pane > svg { pointer-events: none; }
+
+  /* Rosa de los vientos fija */
+  #rosa { position: absolute; top: 14px; right: 14px; width: 86px; height: 86px; z-index: 1000; pointer-events: none; }
+
+  /* Ventana emergente (banner) de cada municipio */
+  .leaflet-popup-content { margin: 10px 13px; font-size: 13px; line-height: 1.45; }
+  .pop-nombre { font-weight: 700; font-size: 14.5px; }
+  .pop-dpto { color: var(--texto-suave); margin-bottom: 7px; }
+  .pop-cat { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .pop-fila { margin-top: 6px; color: var(--texto-suave); }
+  .leaflet-tooltip { font-size: 12.5px; font-weight: 600; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; }
+    #panel { width: 100%; height: auto; max-height: 48vh; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { flex: 1; min-height: 52vh; }
+    #rosa { width: 64px; height: 64px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Patrones de franjas diagonales para municipios con varias categorías visibles (se crean en el script) -->
+<svg width="0" height="0" style="position: absolute" aria-hidden="true"><defs id="patrones"></defs></svg>
+
+<aside id="panel">
+  <h1>Ciudades intermedias, municipios PDET y probabilidad PNIS</h1>
+  <p id="subtitulo">Active o desactive cada categoría. Los municipios que pertenecen a varias categorías visibles se muestran con franjas diagonales de los colores de cada una.</p>
+
+  <div class="seccion">
+    <div class="etiqueta">Categorías</div>
+    <div id="capas" role="group" aria-label="Categorías visibles"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Conteo de municipios</div>
+    <div id="conteo" aria-live="polite"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Convenciones</div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect width="22" height="14" fill="url(#rayas-m37-pdet)"/></svg>
+      <span>Franjas: el municipio pertenece a todas las categorías de sus colores</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="none" stroke="#111" stroke-width="3"/></svg>
+      <span>Contorno negro: intermedia excluida (Tumaco, Uribia)</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#000" stroke-width="1.6"/></svg>
+      <span>Límite departamental</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#000" stroke-width="0.6"/></svg>
+      <span>Límite municipal</span>
+    </div>
+  </div>
+
+  <div class="seccion nota">
+    <p>Pase el cursor sobre un municipio coloreado para ver su nombre y haga clic para ver su ficha. Acerque o aleje con la rueda del ratón o los botones + / −, y arrastre para desplazarse.</p>
+    <p>Fuentes: MGN 2021 (DANE). Muestra de 37 ciudades intermedias: <code>tratados_distancia_euclidiana.dta</code> (Master.do, sección 4.1); las 2 excluidas son las del universo de 39 que son PNIS alta probabilidad (sección 12). PNIS alta y baja probabilidad: <code>d_pr_pnis.xls</code> (sección 3; 29 municipios sin clasificación no se colorean). PDET: Agencia de Renovación del Territorio, datos.gov.co (<code>idrk-ba8y</code>), Decreto 893 de 2017.</p>
+    <p>Fronteras simplificadas (/*__TOLERANCIA__*/ m) para aligerar el archivo.</p>
+  </div>
+</aside>
+
+<main id="contenedor">
+  <div id="mapa"></div>
+  <svg id="rosa" viewBox="-50 -50 100 100" role="img" aria-label="Rosa de los vientos: norte hacia arriba">
+    <circle r="29" fill="#fff" fill-opacity="0.9" stroke="#262626" stroke-width="0.8"/>
+    <circle r="22" fill="none" stroke="#262626" stroke-width="0.4"/>
+    <g stroke="#262626" stroke-width="0.6" stroke-linejoin="round">
+      <g transform="rotate(45)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(135)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(225)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g transform="rotate(315)"><polygon points="0,-22 4,-4 0,0" fill="#262626"/><polygon points="0,-22 -4,-4 0,0" fill="#fff"/></g>
+      <g><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(90)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(180)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+      <g transform="rotate(270)"><polygon points="0,-35 6,-6 0,0" fill="#262626"/><polygon points="0,-35 -6,-6 0,0" fill="#fff"/></g>
+    </g>
+    <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle" fill="#1a1a1a">
+      <text x="0" y="-38" font-size="12">N</text>
+      <text x="0" y="48" font-size="9">S</text>
+      <text x="43" y="3.5" font-size="9">E</text>
+      <text x="-43" y="3.5" font-size="9">O</text>
+    </g>
+  </svg>
+</main>
+
+<script>/*__LEAFLET_JS__*/</script>
+<script>
+  "use strict";
+
+  const DATOS = /*__DATOS__*/;
+
+  // Categorías en orden fijo: el orden de las franjas y de la leyenda no cambia al activar o desactivar.
+  // relleno: false = se dibuja como contorno (intermedias excluidas)
+  const CATEGORIAS = [
+    { k: "m37",  corto: "Muestra 37",  largo: "Muestra original: 37 ciudades intermedias", color: "#2a78d6", relleno: true,  activa: true },
+    { k: "exc",  corto: "Excluida",    largo: "Intermedias excluidas por PNIS alta prob. (Tumaco, Uribia)", color: "#111111", relleno: false, activa: true },
+    { k: "pdet", corto: "PDET",        largo: "Municipios PDET", color: "#1baf7a", relleno: true,  activa: true },
+    { k: "alta", corto: "PNIS alta",   largo: "PNIS alta probabilidad", color: "#eb6834", relleno: true,  activa: true },
+    { k: "baja", corto: "PNIS baja",   largo: "PNIS baja probabilidad", color: "#c9c8c2", relleno: true,  activa: false }
+  ];
+  const RELLENOS = CATEGORIAS.filter(c => c.relleno);
+  const POR_CLAVE = Object.fromEntries(CATEGORIAS.map(c => [c.k, c]));
+
+  const ANCHO_FRANJA = 5;   // píxeles en pantalla por color
+  const nombre = p => p.mpio + " (" + p.dpto + ")";
+  const miles = n => n.toLocaleString("es-CO");
+
+  // ---- Patrones de franjas: uno por cada combinación de 2 o más categorías con relleno ----
+
+  const NS = "http://www.w3.org/2000/svg";
+  const defs = document.getElementById("patrones");
+  const idPatron = claves => "rayas-" + claves.join("-");
+
+  for (let mascara = 1; mascara < (1 << RELLENOS.length); mascara++) {
+    const cats = RELLENOS.filter((c, i) => mascara & (1 << i));
+    if (cats.length < 2) continue;
+    const lado = cats.length * ANCHO_FRANJA;
+    const patron = document.createElementNS(NS, "pattern");
+    patron.setAttribute("id", idPatron(cats.map(c => c.k)));
+    patron.setAttribute("patternUnits", "userSpaceOnUse");
+    patron.setAttribute("width", lado);
+    patron.setAttribute("height", lado);
+    patron.setAttribute("patternTransform", "rotate(45)");
+    cats.forEach((c, i) => {
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", i * ANCHO_FRANJA);
+      r.setAttribute("y", 0);
+      r.setAttribute("width", ANCHO_FRANJA);
+      r.setAttribute("height", lado);
+      r.setAttribute("fill", c.color);
+      patron.appendChild(r);
+    });
+    defs.appendChild(patron);
+  }
+
+  // Categorías con relleno visibles de un municipio y su relleno (color sólido, franjas o ninguno)
+  const rellenosVisibles = p => RELLENOS.filter(c => c.activa && p[c.k] === 1);
+  function relleno(p) {
+    const cats = rellenosVisibles(p);
+    if (cats.length === 0) return null;
+    if (cats.length === 1) return cats[0].color;
+    return "url(#" + idPatron(cats.map(c => c.k)) + ")";
+  }
+
+  // Muestra de color (SVG) para la leyenda: sólido, franjas y/o contorno
+  function muestraColor(clavesRelleno, contorno, ancho = 22, alto = 14) {
+    let fill = "none";
+    if (clavesRelleno.length === 1) fill = POR_CLAVE[clavesRelleno[0]].color;
+    else if (clavesRelleno.length > 1) fill = "url(#" + idPatron(clavesRelleno) + ")";
+    const borde = contorno
+      ? '<rect x="1.5" y="1.5" width="' + (ancho - 3) + '" height="' + (alto - 3) + '" fill="none" stroke="#111" stroke-width="3"/>'
+      : (fill === "none" ? '<rect x="0.5" y="0.5" width="' + (ancho - 1) + '" height="' + (alto - 1) + '" fill="none" stroke="#bdbdbd"/>' : "");
+    return '<svg class="muestra-color" width="' + ancho + '" height="' + alto + '" aria-hidden="true">' +
+      '<rect width="' + ancho + '" height="' + alto + '" fill="' + fill + '"/>' + borde + '</svg>';
+  }
+  const muestraCategoria = c => c.relleno ? muestraColor([c.k], false) : muestraColor([], true);
+
+  // ---- Mapa: solo zoom y desplazamiento ----
+
+  const mapa = L.map("mapa", {
+    zoomSnap: 0.25, zoomDelta: 0.5, maxZoom: 14,
+    maxBounds: [[-10, -90], [18, -58]], maxBoundsViscosity: 1,
+    attributionControl: false
+  });
+  mapa.fitBounds([[-4.25, -79.05], [12.5, -66.85]]);
+  mapa.setMinZoom(mapa.getZoom() - 1);
+  L.control.scale({ metric: true, imperial: false, position: "bottomleft" }).addTo(mapa);
+
+  [["rellenos", 410], ["fronteras", 420], ["dptos", 425], ["excluidas", 430]].forEach(([n, z]) => {
+    mapa.createPane(n).style.zIndex = z;
+  });
+  ["fronteras", "dptos", "excluidas"].forEach(n => { mapa.getPane(n).style.pointerEvents = "none"; });
+
+  // ---- Rellenos interactivos de los municipios con alguna categoría ----
+
+  function ficha(p) {
+    const filas = CATEGORIAS.filter(c => p[c.k] === 1).map(c =>
+      '<div class="pop-cat">' + muestraCategoria(c) + '<span>' + c.largo + '</span></div>').join("");
+    const pnis = p.alta ? "alta" : (p.baja ? "baja" : "sin clasificación");
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      filas +
+      (p.sub ? '<div class="pop-fila">Subregión PDET: ' + p.sub + '</div>' : '') +
+      '<div class="pop-fila">Probabilidad PNIS: ' + pnis + '</div>';
+  }
+
+  const estilo = p => {
+    const f = relleno(p);
+    return { stroke: false, fill: f !== null, fillColor: f || "#fff", fillOpacity: 1 };
+  };
+
+  const capaMpios = L.geoJSON(DATOS.mpios, {
+    pane: "rellenos",
+    renderer: L.svg({ pane: "rellenos" }),
+    style: f => estilo(f.properties),
+    onEachFeature: (f, capa) => {
+      capa.bindTooltip(() => nombre(f.properties), { sticky: true, direction: "top", offset: [0, -8] });
+      capa.bindPopup(() => ficha(f.properties), { maxWidth: 320 });
+      capa.on({
+        mouseover: e => e.target.setStyle({ stroke: true, color: "#000", weight: 2.5, opacity: 1 }),
+        mouseout:  e => e.target.setStyle({ stroke: false })
+      });
+    }
+  }).addTo(mapa);
+
+  // ---- Fronteras municipales y departamentales (canvas, sin interacción) ----
+
+  L.geoJSON(DATOS.fondo, {
+    pane: "fronteras", interactive: false,
+    renderer: L.canvas({ pane: "fronteras", padding: 0.5 }),
+    style: { color: "#000", weight: 0.6, opacity: 0.85 }
+  }).addTo(mapa);
+
+  L.geoJSON(DATOS.dptos, {
+    pane: "dptos", interactive: false,
+    renderer: L.canvas({ pane: "dptos", padding: 0.5 }),
+    style: { color: "#000", weight: 1.4, opacity: 0.9 }
+  }).addTo(mapa);
+
+  // ---- Contorno de las intermedias excluidas ----
+
+  const capaExcluidas = L.geoJSON(
+    { type: "FeatureCollection", features: DATOS.mpios.features.filter(f => f.properties.exc === 1) },
+    {
+      pane: "excluidas", interactive: false,
+      renderer: L.svg({ pane: "excluidas" }),
+      style: { stroke: true, fill: false, color: "#111", weight: 3.5, opacity: 1, lineJoin: "round" }
+    }
+  ).addTo(mapa);
+
+  // ---- Panel: interruptores ----
+
+  const capas = document.getElementById("capas");
+  CATEGORIAS.forEach(c => {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.dataset.k = c.k;
+    boton.innerHTML = '<span class="interruptor" aria-hidden="true"></span>' + muestraCategoria(c) + '<span>' + c.largo + '</span>';
+    boton.addEventListener("click", () => { c.activa = !c.activa; actualizar(); });
+    capas.appendChild(boton);
+  });
+
+  // ---- Caja de conteo: total por categoría y combinaciones visibles ----
+
+  const props = DATOS.mpios.features.map(f => f.properties);
+  const total = Object.fromEntries(CATEGORIAS.map(c => [c.k, props.filter(p => p[c.k] === 1).length]));
+
+  function dibujarConteo() {
+    let html = "<table><tbody>";
+    html += '<tr><td colspan="3" class="subtitulo-tabla" style="padding-top:0">Por categoría (de ' + miles(DATOS.total) + ' municipios)</td></tr>';
+    CATEGORIAS.forEach(c => {
+      html += '<tr class="' + (c.activa ? "" : "apagada") + '"><td class="sw">' + muestraCategoria(c) + '</td><td>' + c.corto + '</td><td class="n">' + miles(total[c.k]) + '</td></tr>';
+    });
+
+    // Combinaciones de las categorías visibles: cada municipio cuenta una sola vez
+    const activas = CATEGORIAS.filter(c => c.activa);
+    const grupos = new Map();
+    props.forEach(p => {
+      const claves = activas.filter(c => p[c.k] === 1).map(c => c.k);
+      if (!claves.length) return;
+      const id = claves.join("+");
+      grupos.set(id, (grupos.get(id) || 0) + 1);
+    });
+    const filas = [...grupos.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const visibles = filas.reduce((s, [, n]) => s + n, 0);
+
+    html += '<tr><td colspan="3" class="subtitulo-tabla">Combinaciones visibles en el mapa</td></tr>';
+    if (!filas.length) {
+      html += '<tr><td colspan="3" class="vacio">Ninguna categoría activa.</td></tr>';
+    } else {
+      filas.forEach(([id, n]) => {
+        const claves = id.split("+");
+        const sw = muestraColor(claves.filter(k => POR_CLAVE[k].relleno), claves.includes("exc"));
+        const texto = claves.length === 1 ? POR_CLAVE[claves[0]].corto + " únicamente" : claves.map(k => POR_CLAVE[k].corto).join(" + ");
+        html += '<tr><td class="sw">' + sw + '</td><td>' + texto + '</td><td class="n">' + miles(n) + '</td></tr>';
+      });
+      html += '<tr class="total"><td></td><td>Municipios coloreados</td><td class="n">' + miles(visibles) + '</td></tr>';
+    }
+    html += "</tbody></table>";
+    document.getElementById("conteo").innerHTML = html;
+  }
+
+  function actualizar() {
+    mapa.closePopup();
+    capas.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", POR_CLAVE[b.dataset.k].activa));
+    capaMpios.setStyle(f => estilo(f.properties));
+    if (POR_CLAVE.exc.activa) capaExcluidas.addTo(mapa); else capaExcluidas.remove();
+    dibujarConteo();
+  }
+
+  actualizar();
+</script>
+</body>
+</html>
