@@ -705,22 +705,23 @@
     background: rgba(255, 255, 255, .96); border: 1px solid #bdbdbd; border-radius: 4px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, .15); padding: 12px 14px;
   }
-  #caja-conteo .etiqueta { font-size: 12.5px; margin-bottom: 6px; }
-  #conteo { font-size: 15px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  #caja-conteo .etiqueta { font-size: 12.5px; font-weight: 700; color: var(--texto); text-align: center; margin-bottom: 6px; }
+  #conteo { font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; }
   #conteo table { width: 100%; border-collapse: collapse; }
-  #conteo td { padding: 3px 0; vertical-align: middle; }
+  #conteo td { padding: 2px 0; vertical-align: middle; }
   #conteo td.n { text-align: right; font-weight: 600; padding-left: 10px; white-space: nowrap; }
   #conteo td.sw { width: 32px; }
   #conteo tr.apagada td { color: #9a9a9a; }
   #conteo tr.apagada td.n { font-weight: 400; }
   #conteo tr.apagada .muestra-color { opacity: .35; }
-  #conteo .subtitulo-tabla { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding-top: 10px; }
+  #conteo .subtitulo-tabla { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding-top: 10px; }
   #conteo tr.total td { border-top: 1px solid var(--borde); padding-top: 6px; }
-  /* Fila dinámica de superposición: municipios en 2 o más categorías visibles */
-  #conteo tr.superposicion td { background: #fff3c4; padding-top: 6px; padding-bottom: 6px; font-weight: 600; }
-  #conteo tr.superposicion td:first-child { padding-left: 6px; border-radius: 3px 0 0 3px; }
-  #conteo tr.superposicion td:last-child { padding-right: 6px; border-radius: 0 3px 3px 0; }
-  #conteo tr.superposicion .detalle { display: block; font-size: 12.5px; font-weight: 400; color: var(--texto-suave); }
+  /* Filas dinámicas de superposición: una por cada par de categorías activas */
+  #conteo tr.superposicion td { background: #fff3c4; padding-top: 3px; padding-bottom: 3px; }
+  #conteo tr.superposicion td:first-child { padding-left: 6px; }
+  #conteo tr.superposicion td:last-child { padding-right: 6px; }
+  #conteo tr.superposicion.vacia td { color: #8a8a8a; }
+  #conteo tr.superposicion.vacia td.n { font-weight: 400; }
   #conteo .vacio { color: var(--texto-suave); font-style: italic; }
 
   .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
@@ -757,7 +758,7 @@
     #contenedor { flex: 1; min-height: 52vh; }
     #rosa { width: 64px; height: 64px; }
     #caja-conteo { right: 8px; bottom: 28px; width: 300px; max-height: 55%; padding: 8px 10px; }
-    #conteo { font-size: 13px; }
+    #conteo { font-size: 12px; }
   }
 </style>
 </head>
@@ -1032,17 +1033,21 @@
     });
     const filas = [...grupos.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const visibles = filas.reduce((s, [, n]) => s + n, 0);
-    // Superposición: municipios que pertenecen a 2 o más de las categorías activas
-    const superpuestos = filas.filter(([id]) => id.includes("+")).reduce((s, [, n]) => s + n, 0);
-
     html += '<tr><td colspan="3" class="subtitulo-tabla" style="padding-top:0">Combinaciones visibles en el mapa</td></tr>';
     if (!filas.length) {
       html += '<tr><td colspan="3" class="vacio">Ninguna categoría activa.</td></tr>';
     } else {
-      const pct = visibles ? Math.round(100 * superpuestos / visibles) : 0;
-      html += '<tr class="superposicion"><td colspan="2">Superposición: en 2 o más categorías activas' +
-        '<span class="detalle">' + pct + ' % de los ' + miles(visibles) + ' municipios coloreados</span></td>' +
-        '<td class="n">' + miles(superpuestos) + '</td></tr>';
+      // Superposiciones: una fila por cada par de categorías activas (n activas → n(n−1)/2 filas),
+      // con los municipios que pertenecen a ambas (pueden pertenecer además a otras)
+      for (let i = 0; i < activas.length; i++) {
+        for (let j = i + 1; j < activas.length; j++) {
+          const a = activas[i], b = activas[j];
+          const n = props.filter(p => p[a.k] === 1 && p[b.k] === 1).length;
+          const sw = muestraColor([a, b].filter(c => c.relleno).map(c => c.k), contornoDe([a.k, b.k]));
+          html += '<tr class="superposicion' + (n ? '' : ' vacia') + '"><td class="sw">' + sw + '</td><td>Superposición ' +
+            a.corto + ' ∩ ' + b.corto + '</td><td class="n">' + miles(n) + '</td></tr>';
+        }
+      }
       filas.forEach(([id, n]) => {
         const claves = id.split("+");
         const sw = muestraColor(claves.filter(k => POR_CLAVE[k].relleno), contornoDe(claves));
