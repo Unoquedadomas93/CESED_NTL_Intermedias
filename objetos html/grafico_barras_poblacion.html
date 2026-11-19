@@ -558,7 +558,7 @@
     if (n) {
       const k = lista.filter(p => pob(p) <= corte).length;
       const xc = x0 + paso * k;
-      // Etiquetas: conteo y flechas en azul oscuro, "≤ / > corte" en rojo, todo del mismo tamaño
+      // Etiquetas: conteos y flechas en azul oscuro, punto de corte en rojo, todo del mismo tamaño
       // (16–24 px según el ancho de las barras); cada flecha crece con los municipios de su lado (28–170 px)
       const fs = Math.max(16, Math.min(24, Math.round(paso * 0.9)));
       const AZUL = "#0b2e6b";
@@ -569,11 +569,10 @@
       el("line", { x1: xc, x2: xc, y1: yt + 6, y2: base + 4, stroke: "#D7191C", "stroke-width": 3,
                    "stroke-dasharray": "8 5" }, g);
       const fondo = el("rect", { fill: "#fff", "fill-opacity": .9, rx: 3 }, g);
-      // Conteo (azul) seguido de "≤ corte" / "> corte" (rojo)
-      const etiqueta = (x, ancla, num, resto) => {
-        const t = el("text", { x, y: yt, "text-anchor": ancla, "font-weight": 700, "font-size": fs }, g);
-        el("tspan", { fill: AZUL }, t).textContent = num;
-        el("tspan", { fill: "#D7191C" }, t).textContent = resto;
+      // Punto de corte (rojo) centrado sobre la línea; conteos (azul) a cada lado
+      const etiqueta = (x, ancla, texto, color) => {
+        const t = el("text", { x, y: yt, "text-anchor": ancla, "font-weight": 700, "font-size": fs, fill: color }, g);
+        t.textContent = texto;
         return t;
       };
       const flecha = (x1, dir, L) => {
@@ -582,8 +581,10 @@
         el("path", { d: "M" + x2 + " " + ya + "L" + (x2 - dir * h) + " " + (ya - h * 0.55) + "L" + (x2 - dir * h) + " " + (ya + h * 0.55) + "Z",
                      fill: AZUL }, g);
       };
-      const izq = etiqueta(xc - 8, "end", miles(k), " ≤ " + abreviar(corte));
-      const der = etiqueta(xc + 8, "start", miles(n - k), " > " + abreviar(corte));
+      const c = etiqueta(xc, "middle", abreviar(corte), "#D7191C").getBBox();
+      const sep = fs * 0.5;
+      const izq = etiqueta(c.x - sep, "end", miles(k), AZUL);
+      const der = etiqueta(c.x + c.width + sep, "start", miles(n - k), AZUL);
       const a = izq.getBBox(), b = der.getBBox();
       const Li = largoFlecha(k), Ld = largoFlecha(n - k);
       flecha(a.x - 6, -1, Li);
