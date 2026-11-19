@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<!-- Plantilla de grafico_barras_poblacion.R: la marca de datos del script se reemplaza por los datos -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comparativo de muestras por población</title>
+<!-- Colombia continental: sin el Archipiélago de San Andrés, Providencia y Santa Catalina -->
+<style>
+  :root {
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --panel: #f6f6f6;
+    --acento: #1a1a1a;
+    --corte: #D7191C;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, selectores, muestras y convenciones (como grafico_barras_d2_d3) */
+  #panel {
+    width: 340px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  #alcance {
+    margin: 10px 0 0; padding: 7px 10px; font-size: 12.5px; line-height: 1.4;
+    background: #fff; border-left: 3px solid var(--acento);
+  }
+  .seccion { margin-top: 18px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave); margin-bottom: 7px;
+  }
+
+  /* Selectores de opción única (año y punto de corte) */
+  .botones { display: grid; grid-template-columns: repeat(var(--columnas, 2), 1fr); gap: 6px; }
+  .botones button {
+    font: inherit; font-size: 13px; padding: 8px 6px; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px; line-height: 1.3;
+  }
+  .botones button:hover { border-color: var(--acento); }
+  .botones button[aria-pressed="true"] {
+    background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600;
+  }
+  .botones button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+  /* Interruptores de muestras (independientes), como en el mapa Comparativo de muestras */
+  #capas { display: grid; gap: 6px; }
+  #capas button {
+    font: inherit; font-size: 13px; line-height: 1.3; padding: 8px 10px; cursor: pointer; color: var(--texto);
+    text-align: left; background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  #capas button:hover { border-color: var(--acento); }
+  #capas button[aria-pressed="true"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+  #capas button[aria-pressed="false"] .muestra-color { opacity: .35; }
+  #capas button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  .interruptor { position: relative; width: 26px; height: 15px; flex: none; border-radius: 8px; background: #c4c4c4; transition: background .15s; }
+  .interruptor::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  [aria-pressed="true"] .interruptor { background: var(--acento); }
+  [aria-pressed="true"] .interruptor::after { transform: translateX(11px); }
+  .muestra-color { flex: none; display: block; }
+
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
+  .leyenda-item svg { flex: none; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+  code { font-family: Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Área del gráfico: encabezado con flechas de desplazamiento y barras debajo */
+  #contenedor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #encabezado {
+    flex: none; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 14px 18px 6px;
+  }
+  #encabezado-texto { font-size: 13.5px; line-height: 1.5; color: var(--texto-suave); }
+  #encabezado-texto b { color: var(--texto); }
+  #navegacion {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--texto-suave); font-variant-numeric: tabular-nums;
+  }
+  #navegacion button {
+    width: 36px; height: 32px; font: inherit; font-size: 20px; line-height: 1; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+  }
+  #navegacion button:hover:not(:disabled) { border-color: var(--acento); }
+  #navegacion button:disabled { opacity: .35; cursor: default; }
+  #navegacion button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  #posicion { min-width: 150px; text-align: center; }
+
+  #area { flex: 1; position: relative; min-height: 0; }
+  /* Eje vertical fijo; las barras se desplazan horizontalmente debajo de él */
+  #eje-y { position: absolute; left: 0; top: 0; z-index: 2; display: block; }
+  #desplazable {
+    position: absolute; left: 72px; right: 0; top: 0; bottom: 0;
+    overflow-x: auto; overflow-y: hidden; cursor: grab; outline: none;
+  }
+  #desplazable.arrastrando { cursor: grabbing; }
+  #barras { display: block; user-select: none; -webkit-user-select: none; }
+  #barras text, #eje-y text { font-family: inherit; }
+  .valor { font-size: 10px; fill: var(--texto); font-variant-numeric: tabular-nums; }
+  .nombre { font-size: 10.5px; fill: var(--texto); }
+  .eje { font-size: 11px; fill: var(--texto-suave); font-variant-numeric: tabular-nums; }
+  .col { cursor: pointer; outline: none; }
+  .col .fondo { fill: transparent; }
+  .col:hover .fondo, .col:focus-visible .fondo, .col.activa .fondo { fill: #ededed; }
+  .col:hover .nombre, .col:focus-visible .nombre, .col.activa .nombre,
+  .col:hover .valor, .col:focus-visible .valor, .col.activa .valor { font-weight: 700; }
+
+  /* Etiqueta al pasar el cursor y ficha (banner) al hacer clic */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 6; display: none; white-space: nowrap;
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 3px; padding: 4px 8px;
+    font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  #ficha {
+    position: absolute; z-index: 7; display: none; width: 300px;
+    background: #fff; border-radius: 12px; padding: 10px 30px 11px 13px;
+    font-size: 13px; line-height: 1.45; box-shadow: 0 3px 14px rgba(0,0,0,.4);
+  }
+  #ficha-cerrar {
+    position: absolute; top: 4px; right: 6px; border: 0; background: none; cursor: pointer;
+    font: 18px/1 inherit; color: #757575; padding: 4px;
+  }
+  #ficha-cerrar:hover { color: #000; }
+  .pop-nombre { font-weight: 700; font-size: 14.5px; }
+  .pop-dpto { color: var(--texto-suave); margin-bottom: 7px; }
+  .pop-cat { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .pop-fila { margin-top: 4px; }
+  .pop-suave { margin-top: 6px; color: var(--texto-suave); }
+
+  /* Caja de conteo flotante (como en el mapa): arriba a la izquierda, donde están las barras más bajas */
+  #caja-conteo {
+    position: absolute; left: 84px; top: 10px; z-index: 4;
+    width: 390px; max-width: calc(100% - 100px); max-height: calc(100% - 20px); overflow-y: auto;
+    background: rgba(255, 255, 255, .96); border: 1px solid #bdbdbd; border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .15); padding: 8px 11px;
+  }
+  /* La caja se mueve arrastrando su título */
+  #caja-conteo .cabeza { position: relative; margin-bottom: 4px; cursor: move; user-select: none; -webkit-user-select: none; }
+  #caja-conteo .titulo-caja { font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: center; }
+  #plegar {
+    position: absolute; right: -4px; top: -5px; width: 24px; height: 24px; padding: 0; cursor: pointer;
+    font: 16px/1 inherit; color: var(--texto-suave); background: none; border: 0; border-radius: 3px;
+  }
+  #plegar:hover { color: #000; background: #eee; }
+  #caja-conteo.plegada { overflow: hidden; width: 230px; }
+  #caja-conteo.plegada #conteo { display: none; }
+  #caja-conteo.plegada .cabeza { margin-bottom: 0; }
+  #conteo { font-size: 12px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+  #conteo table { width: 100%; border-collapse: collapse; }
+  #conteo th { font-size: 10.5px; font-weight: 600; color: var(--texto-suave); text-align: right; padding: 0 0 2px 10px; white-space: nowrap; }
+  #conteo td { padding: 2px 0; vertical-align: middle; }
+  #conteo td.n { text-align: right; font-weight: 600; padding-left: 10px; white-space: nowrap; }
+  #conteo td.sw { width: 32px; }
+  #conteo tr.apagada td { color: #9a9a9a; }
+  #conteo tr.apagada td.n { font-weight: 400; }
+  #conteo tr.apagada .muestra-color { opacity: .35; }
+  #conteo .subtitulo-tabla { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding-top: 8px; }
+  #conteo td.sw .muestra-color { width: 20px; height: 12px; }
+  #conteo tr.total td { border-top: 1px solid var(--borde); padding-top: 6px; }
+  #conteo .vacio { color: var(--texto-suave); font-style: italic; }
+  /* Filas dinámicas de superposición: una por cada par de muestras activas */
+  #conteo tr.superposicion td { background: #fff3c4; padding-top: 3px; padding-bottom: 3px; }
+  #conteo tr.superposicion td:first-child { padding-left: 6px; }
+  #conteo tr.superposicion td:last-child { padding-right: 6px; }
+  #conteo tr.superposicion.vacia td { color: #8a8a8a; }
+  #conteo tr.superposicion.vacia td.n { font-weight: 400; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; height: auto; }
+    #panel { width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { height: 90vh; flex: none; }
+    #encabezado { flex-direction: column; align-items: flex-start; }
+    #caja-conteo { width: 300px; max-height: 60%; }
+    #conteo { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Patrones de franjas diagonales para municipios en varias muestras activas (se crean en el script) -->
+<svg width="0" height="0" style="position: absolute" aria-hidden="true"><defs id="patrones"></defs></svg>
+
+<aside id="panel">
+  <h1>Comparativo de muestras por población</h1>
+  <p id="subtitulo">Población total de cada municipio en el año elegido, ordenada de menor (izquierda) a mayor (derecha). Active o desactive cada muestra; los municipios que pertenecen a varias muestras activas se muestran con franjas diagonales de los colores de cada una.</p>
+  <p id="alcance"><b>Colombia continental:</b> el gráfico y todos los conteos excluyen el Archipiélago de San Andrés, Providencia y Santa Catalina.</p>
+
+  <div class="seccion">
+    <div class="etiqueta">Población en el año</div>
+    <div id="sel-anio" class="botones" role="group" aria-label="Población en el año"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Punto de corte</div>
+    <div id="sel-corte" class="botones" style="--columnas: 4" role="group" aria-label="Punto de corte"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Escala</div>
+    <div id="sel-escala" class="botones" role="group" aria-label="Escala vertical"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Muestra</div>
+    <div id="capas" role="group" aria-label="Muestras visibles"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Convenciones</div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect width="22" height="14" fill="url(#rayas-m37-pdet)"/></svg>
+      <span>Franjas: el municipio pertenece a todas las muestras de sus colores</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="#fde4e4" stroke="#E00000" stroke-width="3"/></svg>
+      <span>Contorno rojo: capital departamental (relleno rosado si es solo capital)</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="#e4e4e4" stroke="#111" stroke-width="3"/></svg>
+      <span>Contorno negro: intermedia excluida (Tumaco, Uribia)</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#D7191C" stroke-width="2" stroke-dasharray="5 3"/></svg>
+      <span>Punto de corte de población</span>
+    </div>
+  </div>
+
+  <div class="seccion nota">
+    <p>Desplácese horizontalmente con la rueda del ratón o el trackpad, arrastrando el gráfico o con las flechas ‹ ›. Se ven 50 municipios a la vez; el gráfico abre en el extremo derecho, con los municipios más poblados. Pase el cursor sobre una barra para ver el municipio y haga clic para ver su ficha. La caja de conteo se mueve arrastrando su título y se pliega con −.</p>
+    <p>Escala logarítmica (por defecto): cada línea principal multiplica la población por 10. Escala lineal: el eje va de 0 al municipio más poblado a la vista (el de más a la derecha) y se ajusta al desplazar. El número sobre cada barra es la población redondeada (143k = 143.000 habitantes; 2,42M = 2.420.000).</p>
+    <p>* PDET: San José de Uré (Córdoba) fue creado en 2007 y no tiene población en 2005; en ese año se muestran 169 de los 170 municipios PDET.</p>
+    <p>Fuentes: población total (<code>pobl_tot</code>) del panel CEDE; nombres del MGN 2021 (DANE). Muestras como en el mapa Comparativo de muestras: 37 ciudades intermedias de Master.do (sección 4.1); las 2 excluidas son las del universo de 39 que son PNIS alta probabilidad (sección 12); capitales: código DANE terminado en 001, sin Agua de Dios (31 continentales, Bogotá incluida); PNIS: <code>d_pr_pnis.xls</code> (sección 3); PDET: Agencia de Renovación del Territorio, datos.gov.co (<code>idrk-ba8y</code>).</p>
+  </div>
+</aside>
+
+<main id="contenedor">
+  <div id="encabezado">
+    <div id="encabezado-texto"></div>
+    <div id="navegacion">
+      <button id="ir-izq" type="button" aria-label="Desplazar a la izquierda (municipios menos poblados)">‹</button>
+      <span id="posicion" aria-live="polite"></span>
+      <button id="ir-der" type="button" aria-label="Desplazar a la derecha (municipios más poblados)">›</button>
+    </div>
+  </div>
+  <div id="area">
+    <svg id="eje-y" aria-hidden="true"></svg>
+    <div id="desplazable" tabindex="0" aria-label="Gráfico de barras desplazable horizontalmente">
+      <svg id="barras" role="group" aria-label="Población total de cada municipio"></svg>
+    </div>
+    <section id="caja-conteo" aria-label="Conteo de municipios">
+      <div class="cabeza">
+        <div class="titulo-caja">Conteo de municipios</div>
+        <button id="plegar" type="button" aria-expanded="true" aria-label="Plegar la caja de conteo">−</button>
+      </div>
+      <div id="conteo" aria-live="polite"></div>
+    </section>
+    <div id="tip"></div>
+    <div id="ficha" role="dialog" aria-live="polite">
+      <button id="ficha-cerrar" type="button" aria-label="Cerrar">×</button>
+      <div id="ficha-contenido"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+  "use strict";
+
+  const DATOS = /*__DATOS__*/;
+
+  const NS = "http://www.w3.org/2000/svg";
+
+  // Muestras en orden fijo (el de los interruptores). Mismos colores que el mapa Comparativo de muestras:
+  // relleno para muestra 37, PNIS alta y PDET (franjas si hay varias); contorno para capitales y excluidas.
+  const CATEGORIAS = [
+    { k: "m37",  corto: "Muestra 37",            largo: "37 Ciudades intermedias (>150k en 2013)",   color: "#2a78d6", relleno: true,  activa: true },
+    { k: "cap",  corto: "Capital",               largo: "Capitales",                                 color: "#E00000", relleno: false, tinte: "#fde4e4", activa: true },
+    { k: "exc",  corto: "Intermedias PNIS High", largo: "2 intermedias excluidas (Tumaco, Uribia)",  color: "#111111", relleno: false, tinte: "#e4e4e4", activa: true },
+    { k: "alta", corto: "PNIS alta",             largo: "PNIS High Probability",                     color: "#eb6834", relleno: true,  activa: false },
+    { k: "pdet", corto: "PDET",                  largo: "PDET*",                                     color: "#1baf7a", relleno: true,  activa: false }
+  ];
+  const RELLENOS = CATEGORIAS.filter(c => c.relleno);
+  const CONTORNOS = CATEGORIAS.filter(c => !c.relleno);
+  const POR_CLAVE = Object.fromEntries(CATEGORIAS.map(c => [c.k, c]));
+
+  const ANIOS = [2005, 2013];
+  const CORTES = [50000, 100000, 150000, 200000];
+  const VENTANA = 50;        // municipios visibles a la vez
+  const EJE = 72;            // ancho del eje vertical fijo (px)
+  const ANCHO_FRANJA = 4;    // píxeles por color en las franjas
+
+  let anio = 2013;
+  let corte = 150000;
+  let escala = "log";   // "log" (por defecto) o "lineal"
+
+  const props = DATOS.mpios;
+  const pob = p => anio === 2005 ? p.p05 : p.p13;
+  const conDato = p => pob(p) !== null;
+  const nombre = p => p.mpio + " (" + p.dpto + ")";
+  const miles = n => n.toLocaleString("es-CO");
+  const fmt = (v, d) => v.toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // Población abreviada: 143k; menos de 10.000 con un decimal (9,6k); millones con dos (2,42M)
+  function abreviar(v) {
+    if (v >= 1e6) return fmt(v / 1e6, 2) + "M";
+    if (v >= 1e4) return Math.round(v / 1e3) + "k";
+    return fmt(v / 1e3, 1) + "k";
+  }
+  const etiquetaEje = v => (v >= 1e6 ? (v / 1e6) + "M" : v >= 1e3 ? (v / 1e3) + "k" : String(v)).replace(".", ",");
+
+  // ---- Patrones de franjas: uno por cada combinación de 2 o más muestras con relleno ----
+
+  const defs = document.getElementById("patrones");
+  const idPatron = claves => "rayas-" + claves.join("-");
+
+  for (let mascara = 1; mascara < (1 << RELLENOS.length); mascara++) {
+    const cats = RELLENOS.filter((c, i) => mascara & (1 << i));
+    if (cats.length < 2) continue;
+    const lado = cats.length * ANCHO_FRANJA;
+    const patron = document.createElementNS(NS, "pattern");
+    patron.setAttribute("id", idPatron(cats.map(c => c.k)));
+    patron.setAttribute("patternUnits", "userSpaceOnUse");
+    patron.setAttribute("width", lado);
+    patron.setAttribute("height", lado);
+    patron.setAttribute("patternTransform", "rotate(45)");
+    cats.forEach((c, i) => {
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", i * ANCHO_FRANJA);
+      r.setAttribute("y", 0);
+      r.setAttribute("width", ANCHO_FRANJA);
+      r.setAttribute("height", lado);
+      r.setAttribute("fill", c.color);
+      patron.appendChild(r);
+    });
+    defs.appendChild(patron);
+  }
+
+  // Relleno y contorno de una barra según las muestras activas a las que pertenece el municipio
+  function aspecto(p) {
+    const rellenos = RELLENOS.filter(c => c.activa && p[c.k] === 1);
+    const borde = CONTORNOS.find(c => c.activa && p[c.k] === 1) || null;
+    let fill;
+    if (rellenos.length === 1) fill = rellenos[0].color;
+    else if (rellenos.length > 1) fill = "url(#" + idPatron(rellenos.map(c => c.k)) + ")";
+    else fill = borde ? borde.tinte : "#ccc";
+    return { fill, borde };
+  }
+
+  // Muestra de color (SVG) para la leyenda: relleno sólido, franjas o tinte, y contorno grueso opcional
+  function muestraColor(clavesRelleno, contorno, ancho = 22, alto = 14) {
+    let fill = "none";
+    if (clavesRelleno.length === 1) fill = POR_CLAVE[clavesRelleno[0]].color;
+    else if (clavesRelleno.length > 1) fill = "url(#" + idPatron(clavesRelleno) + ")";
+    else if (contorno) fill = contorno.tinte;
+    const borde = contorno
+      ? '<rect x="1.5" y="1.5" width="' + (ancho - 3) + '" height="' + (alto - 3) + '" fill="none" stroke="' + contorno.color + '" stroke-width="3"/>'
+      : (fill === "none" ? '<rect x="0.5" y="0.5" width="' + (ancho - 1) + '" height="' + (alto - 1) + '" fill="none" stroke="#bdbdbd"/>' : "");
+    return '<svg class="muestra-color" width="' + ancho + '" height="' + alto + '" aria-hidden="true">' +
+      '<rect width="' + ancho + '" height="' + alto + '" fill="' + fill + '"/>' + borde + '</svg>';
+  }
+  const muestraClaves = claves => muestraColor(
+    claves.filter(k => POR_CLAVE[k].relleno),
+    CONTORNOS.find(c => claves.includes(c.k)) || null);
+  const muestraCategoria = c => muestraClaves([c.k]);
+
+  // ---- Utilidades de dibujo ----
+
+  const regla = document.createElement("canvas").getContext("2d");
+  regla.font = "10.5px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+  const ancho = s => regla.measureText(s).width;
+  const SEN45 = Math.SQRT1_2;
+
+  function el(tipo, atributos, padre) {
+    const e = document.createElementNS(NS, tipo);
+    Object.entries(atributos).forEach(([k, v]) => e.setAttribute(k, v));
+    if (padre) padre.appendChild(e);
+    return e;
+  }
+
+  // Barra con esquinas superiores redondeadas, anclada a la línea base
+  function barra(x, y, w, h) {
+    const r = Math.max(0, Math.min(3, w / 2, h));
+    return "M" + x + "," + (y + h) + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y +
+           "H" + (x + w - r) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + r) + "V" + (y + h) + "Z";
+  }
+
+  const area = document.getElementById("area");
+  const desplazable = document.getElementById("desplazable");
+  const svg = document.getElementById("barras");
+  const ejeY = document.getElementById("eje-y");
+  const tip = document.getElementById("tip");
+  const ficha = document.getElementById("ficha");
+  const btnIzq = document.getElementById("ir-izq");
+  const btnDer = document.getElementById("ir-der");
+  let activa = null;
+  let geo = null;   // geometría del último dibujo (para la navegación)
+
+  // Municipios visibles: con población en el año y en al menos una muestra activa, de menor a mayor
+  function visibles() {
+    return props
+      .filter(p => conDato(p) && CATEGORIAS.some(c => c.activa && p[c.k] === 1))
+      .sort((a, b) => pob(a) - pob(b) || a.cod.localeCompare(b.cod));
+  }
+
+  // Dominio logarítmico en potencias de 10: igual para 2005 y 2013 (cambia solo con las muestras activas)
+  // y siempre incluye los puntos de corte (10k a 1M como mínimo)
+  function dominio() {
+    const valores = [];
+    props.forEach(p => {
+      if (!CATEGORIAS.some(c => c.activa && p[c.k] === 1)) return;
+      [p.p05, p.p13].forEach(v => { if (v) valores.push(v); });
+    });
+    if (!valores.length) return [1e4, 1e6];
+    const lo = Math.pow(10, Math.floor(Math.log10(Math.min(...valores))));
+    const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...valores))));
+    return [Math.min(lo, 1e4), Math.max(hi, 1e6)];
+  }
+
+  // ---- Ficha del municipio ----
+
+  function fichaMunicipio(p, puesto, n) {
+    const filas = CATEGORIAS.filter(c => p[c.k] === 1).map(c =>
+      '<div class="pop-cat">' + muestraCategoria(c) + '<span>' + (c.k === "pdet" ? "PDET" : c.largo) + '</span></div>').join("");
+    const pnis = p.pnis === "alta" ? "alta" : p.pnis === "baja" ? "baja" : "sin clasificación";
+    const p05 = p.p05 === null ? "sin dato (municipio creado en 2007)" : miles(p.p05);
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      '<div class="pop-fila">Población 2005: ' + (anio === 2005 ? '<b>' + p05 + '</b>' : p05) + '</div>' +
+      '<div class="pop-fila">Población 2013: ' + (anio === 2013 ? '<b>' + miles(p.p13) + '</b>' : miles(p.p13)) + '</div>' +
+      '<div class="pop-fila">Puesto ' + puesto + ' de ' + n + ' en el gráfico (de menor a mayor, ' + anio + ')</div>' +
+      filas +
+      (p.sub ? '<div class="pop-suave">Subregión PDET: ' + p.sub + '</div>' : '') +
+      '<div class="pop-suave">Probabilidad PNIS: ' + pnis + '</div>';
+  }
+
+  function cerrarFicha() {
+    ficha.style.display = "none";
+    if (activa) activa.classList.remove("activa");
+    activa = null;
+  }
+
+  function abrirFicha(col, p, cx, yTope, puesto, n) {
+    cerrarFicha();
+    tip.style.display = "none";
+    activa = col;
+    col.classList.add("activa");
+    document.getElementById("ficha-contenido").innerHTML = fichaMunicipio(p, puesto, n);
+    ficha.style.display = "block";
+    const w = ficha.offsetWidth, h = ficha.offsetHeight;
+    const x = EJE + cx - desplazable.scrollLeft;
+    let top = yTope - h - 12;
+    if (top < 4) top = Math.min(yTope + 12, area.clientHeight - h - 4);
+    ficha.style.left = Math.min(Math.max(x - w / 2, EJE + 4), area.clientWidth - w - 4) + "px";
+    ficha.style.top = Math.max(4, top) + "px";
+  }
+
+  document.getElementById("ficha-cerrar").addEventListener("click", cerrarFicha);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") cerrarFicha(); });
+  svg.addEventListener("click", e => { if (!e.target.closest(".col")) cerrarFicha(); });
+
+  function moverTip(e) {
+    const r = area.getBoundingClientRect();
+    tip.style.left = Math.min(e.clientX - r.left + 12, area.clientWidth - tip.offsetWidth - 4) + "px";
+    tip.style.top = (e.clientY - r.top - 34) + "px";
+  }
+
+  // ---- Gráfico ----
+
+  // Paso "redondo" (1; 2; 2,5 o 5 × 10^k) para la escala lineal
+  function pasoRedondo(v) {
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= v);
+  }
+
+  // Construye barras, nombres y eventos; la posición vertical la fija escalar()
+  function dibujar(conservarDesplazamiento) {
+    cerrarFicha();
+    const izquierdaPrevia = desplazable.scrollLeft;
+    const lista = visibles();
+    const n = lista.length;
+
+    // Ancho: 50 municipios por ventana; con menos de 50, las barras se alinean a la derecha.
+    // Margen izquierdo para el nombre inclinado del primer municipio; con 50 o menos municipios
+    // todo cabe en la ventana sin desplazamiento
+    const vw = desplazable.clientWidth;
+    const mr = 14;
+    const ml = n ? Math.ceil(ancho(lista[0].mpio) * SEN45) + 8 : 6;
+    const paso = Math.max(12, (vw - mr - (n <= VENTANA ? ml : 0)) / VENTANA);
+    const W = Math.max(vw, Math.ceil(n * paso + mr + ml));
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", 10);
+    const H = Math.max(320, desplazable.clientHeight);   // sin la barra de desplazamiento horizontal
+    svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.textContent = "";
+
+    const largo = n ? Math.max(...lista.map(p => ancho(p.mpio))) : 40;
+    const mt = 58;
+    const mb = Math.ceil(largo * SEN45) + 20;
+    const base = H - mb, ph = base - mt;
+    const x0 = W - mr - n * paso;
+    const bw = Math.max(4, paso * 0.72);
+
+    const rejilla = el("g", { "aria-hidden": "true" }, svg);
+
+    // Barras: una columna por municipio (zona de clic de toda la altura)
+    const barras = lista.map((p, i) => {
+      const cx = x0 + paso * (i + 0.5);
+      const v = pob(p);
+      const { fill, borde } = aspecto(p);
+      const b = { v, cx, ins: borde ? 1 : 0, tope: base };
+      const col = el("g", { class: "col", tabindex: 0, role: "button",
+                            "aria-label": nombre(p) + ": " + miles(v) + " habitantes en " + anio }, svg);
+      el("rect", { class: "fondo", x: cx - paso / 2, y: 0, width: paso, height: H }, col);
+      // Con contorno, la barra se reduce 1 px por lado para que el trazo quede dentro de su ancho
+      b.path = el("path", { class: "barra", fill, stroke: borde ? borde.color : "none",
+                            "stroke-width": borde ? 2 : 0, "stroke-linejoin": "round" }, col);
+      b.valor = el("text", { class: "valor", "dominant-baseline": "middle" }, col);
+      b.valor.textContent = abreviar(v);
+      el("text", { class: "nombre", x: cx + 3, y: base + 12, "text-anchor": "end",
+                   transform: "rotate(-45 " + (cx + 3) + " " + (base + 12) + ")" }, col).textContent = p.mpio;
+
+      col.addEventListener("mouseenter", e => {
+        if (activa || arrastrado) return;
+        tip.textContent = nombre(p) + " · " + abreviar(v);
+        tip.style.display = "block";
+        moverTip(e);
+      });
+      col.addEventListener("mousemove", e => { if (!activa && !arrastrado) moverTip(e); });
+      col.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+      col.addEventListener("click", () => { if (!arrastrado) abrirFicha(col, p, cx, b.tope, i + 1, n); });
+      col.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirFicha(col, p, cx, b.tope, i + 1, n); }
+      });
+      return b;
+    });
+
+    // Punto de corte: línea roja discontinua sobre las barras (su altura la fija escalar())
+    const lineaCorte = el("line", { x1: 0, x2: W, stroke: "#D7191C", "stroke-width": 2,
+                                    "stroke-dasharray": "7 4", "pointer-events": "none" }, svg);
+
+    if (!n) {
+      el("text", { x: vw / 2, y: mt + ph / 2, "text-anchor": "middle", "font-size": 14, fill: "#555" }, svg)
+        .textContent = "Active al menos una muestra.";
+    }
+
+    geo = { n, paso, x0, W, H, mt, base, ph, bw, lista, barras, rejilla, lineaCorte, ultimo: n - 1 };
+    desplazable.scrollLeft = conservarDesplazamiento ? izquierdaPrevia : W;   // por defecto, extremo derecho
+    actualizarNavegacion();
+    escalar();
+    dibujarConteo(lista);
+  }
+
+  // Escala vertical: logarítmica fija (según las muestras activas) o lineal de 0 al municipio más
+  // poblado de la ventana visible (el de más a la derecha), que se recalcula al desplazar
+  function escalar() {
+    if (!geo) return;
+    const { n, W, H, mt, base, ph, bw, barras, rejilla, lineaCorte } = geo;
+    let y, marcas;
+    if (escala === "log") {
+      const [lo, hi] = dominio();
+      const L0 = Math.log10(lo), L1 = Math.log10(hi);
+      y = v => base - (Math.log10(v) - L0) / (L1 - L0) * ph;
+      marcas = [];
+      for (let d = Math.round(L0); d <= Math.round(L1); d++) {
+        [1, 2, 5].forEach(m => {
+          const v = m * Math.pow(10, d);
+          if (v >= lo && v <= hi) marcas.push({ v, principal: m === 1 });
+        });
+      }
+    } else {
+      const vmax = n ? pob(geo.lista[geo.ultimo]) : corte;
+      const s = pasoRedondo(vmax / 5);
+      const tope = Math.ceil(vmax * 1.02 / s) * s;
+      y = v => base - v / tope * ph;
+      marcas = [];
+      for (let v = 0; v <= tope + s / 2; v += s) marcas.push({ v, principal: v === 0 });
+    }
+    // Las barras a la derecha de la ventana pueden superar el máximo lineal: se recortan arriba
+    const yb = v => Math.max(6, y(v));
+
+    // Rejilla (en las barras) y etiquetas del eje (en el eje fijo)
+    rejilla.textContent = "";
+    ejeY.setAttribute("width", EJE);
+    ejeY.setAttribute("height", H);
+    ejeY.textContent = "";
+    el("rect", { x: 0, y: 0, width: EJE, height: H, fill: "#fff" }, ejeY);
+    const yCorte = y(corte);
+    const yPildora = Math.min(Math.max(yCorte, mt - 30), base);
+    marcas.forEach(({ v, principal }) => {
+      el("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: principal ? "#dcdcdc" : "#f0f0f0", "stroke-width": 1 }, rejilla);
+      if (Math.abs(y(v) - yPildora) < 13) return;   // se omite la etiqueta que choca con la del corte
+      el("text", { class: "eje", x: EJE - 8, y: y(v) + 4, "text-anchor": "end",
+                   "font-weight": principal ? 600 : 400 }, ejeY).textContent = etiquetaEje(v);
+    });
+    el("line", { x1: 0, x2: W, y1: base, y2: base, stroke: "#262626", "stroke-width": 1 }, rejilla);
+    el("line", { x1: EJE - 0.5, x2: EJE - 0.5, y1: mt - 6, y2: base, stroke: "#262626", "stroke-width": 1 }, ejeY);
+    el("text", { class: "eje", transform: "translate(14," + (mt + ph / 2) + ") rotate(-90)", "text-anchor": "middle" }, ejeY)
+      .textContent = "Población total " + anio + (escala === "log" ? " (escala logarítmica)" : " (escala lineal)");
+
+    // Barras y valores
+    barras.forEach(b => {
+      const tope = yb(b.v);
+      b.tope = tope;
+      b.path.setAttribute("d", barra(b.cx - bw / 2 + b.ins, tope + b.ins, bw - 2 * b.ins, Math.max(0, base - tope - b.ins)));
+      b.valor.setAttribute("x", b.cx);
+      b.valor.setAttribute("y", tope - 4);
+      b.valor.setAttribute("transform", "rotate(-90 " + b.cx + " " + (tope - 4) + ")");
+    });
+
+    // Punto de corte: si queda por encima del máximo lineal, la línea se oculta y la etiqueta sube con ↑
+    const fuera = yCorte < mt - 30;
+    lineaCorte.setAttribute("y1", yCorte);
+    lineaCorte.setAttribute("y2", yCorte);
+    lineaCorte.style.display = fuera ? "none" : "";
+    el("rect", { x: 22, y: yPildora - 9, width: EJE - 26, height: 18, rx: 3, fill: "#fff", stroke: "#D7191C", "stroke-width": 1.5 }, ejeY);
+    el("text", { x: 22 + (EJE - 26) / 2, y: yPildora + 4, "text-anchor": "middle", "font-size": 11, "font-weight": 700, fill: "#D7191C" }, ejeY)
+      .textContent = (fuera ? "↑ " : "") + abreviar(corte);
+  }
+
+  // ---- Navegación horizontal: rueda/trackpad, arrastre, flechas y teclado ----
+
+  function actualizarNavegacion() {
+    if (!geo) return;
+    const izq = desplazable.scrollLeft, der = izq + desplazable.clientWidth;
+    const max = desplazable.scrollWidth - desplazable.clientWidth;
+    btnIzq.disabled = izq <= 1;
+    btnDer.disabled = izq >= max - 1;
+    if (!geo.n) { document.getElementById("posicion").textContent = "Sin municipios"; return; }
+    const primero = Math.max(0, Math.ceil((izq - geo.x0) / geo.paso - 0.5));
+    const ultimo = Math.min(geo.n - 1, Math.floor((der - geo.x0) / geo.paso - 0.5));
+    geo.ultimo = Math.max(primero, ultimo);
+    document.getElementById("posicion").textContent =
+      "Municipios " + miles(primero + 1) + "–" + miles(ultimo + 1) + " de " + miles(geo.n);
+  }
+
+  let cuadro = null;
+  desplazable.addEventListener("scroll", () => {
+    actualizarNavegacion();
+    tip.style.display = "none";
+    if (activa) cerrarFicha();
+    // Escala lineal dinámica: un reescalado por cuadro de animación
+    if (escala === "lineal" && !cuadro) cuadro = requestAnimationFrame(() => { cuadro = null; escalar(); });
+  });
+
+  // Rueda vertical del ratón → desplazamiento horizontal (el trackpad horizontal funciona de forma nativa)
+  desplazable.addEventListener("wheel", e => {
+    if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    if (desplazable.scrollWidth <= desplazable.clientWidth) return;
+    desplazable.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 32 : 1);
+    e.preventDefault();
+  }, { passive: false });
+
+  // Arrastrar con el ratón; un arrastre de más de 4 px no abre la ficha
+  let arrastre = null, arrastrado = false;
+  desplazable.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    arrastre = { x: e.clientX, izq: desplazable.scrollLeft };
+    arrastrado = false;
+  });
+  window.addEventListener("pointermove", e => {
+    if (!arrastre) return;
+    const dx = e.clientX - arrastre.x;
+    if (!arrastrado && Math.abs(dx) > 4) {
+      arrastrado = true;
+      desplazable.classList.add("arrastrando");
+      tip.style.display = "none";
+    }
+    if (arrastrado) desplazable.scrollLeft = arrastre.izq - dx;
+  });
+  window.addEventListener("pointerup", () => {
+    if (!arrastre) return;
+    arrastre = null;
+    desplazable.classList.remove("arrastrando");
+    setTimeout(() => { arrastrado = false; }, 0);   // después del clic que sigue al arrastre
+  });
+
+  // Flechas: media ventana (25 municipios) por clic
+  const desplazar = s => desplazable.scrollBy({ left: s * (geo ? geo.paso : 20) * VENTANA / 2, behavior: "smooth" });
+  btnIzq.addEventListener("click", () => desplazar(-1));
+  btnDer.addEventListener("click", () => desplazar(1));
+  desplazable.addEventListener("keydown", e => {
+    if (e.target !== desplazable) return;
+    if (e.key === "ArrowLeft") { desplazar(-1); e.preventDefault(); }
+    if (e.key === "ArrowRight") { desplazar(1); e.preventDefault(); }
+  });
+
+  // ---- Caja de conteo: superposiciones por pares, combinaciones y totales por muestra ----
+
+  function dibujarConteo(lista) {
+    const activas = CATEGORIAS.filter(c => c.activa);
+    const sobre = p => pob(p) > corte;
+    const fila = (clase, sw, texto, ps) => '<tr class="' + clase + '"><td class="sw">' + sw + '</td><td>' + texto +
+      '</td><td class="n">' + miles(ps.length) + '</td><td class="n">' + miles(ps.filter(sobre).length) + '</td></tr>';
+
+    let html = '<table><thead><tr><th></th><th></th><th>Total</th><th>&gt; ' + abreviar(corte) + ' en ' + anio +
+      '</th></tr></thead><tbody>';
+
+    if (!lista.length) {
+      html += '<tr><td colspan="4" class="vacio">Ninguna muestra activa.</td></tr>';
+    } else {
+      // Superposiciones: una fila por cada par de muestras activas (n activas → n(n−1)/2 filas),
+      // con los municipios que pertenecen a ambas (pueden pertenecer además a otras)
+      if (activas.length > 1) {
+        html += '<tr><td colspan="4" class="subtitulo-tabla" style="padding-top:0">Superposiciones (pares de muestras activas)</td></tr>';
+      }
+      for (let i = 0; i < activas.length; i++) {
+        for (let j = i + 1; j < activas.length; j++) {
+          const a = activas[i], b = activas[j];
+          const ps = lista.filter(p => p[a.k] === 1 && p[b.k] === 1);
+          html += fila("superposicion" + (ps.length ? "" : " vacia"), muestraClaves([a.k, b.k]),
+                       a.corto + " ∩ " + b.corto, ps);
+        }
+      }
+      html += '<tr><td colspan="4" class="subtitulo-tabla"' + (activas.length > 1 ? '' : ' style="padding-top:0"') +
+        '>Combinaciones en el gráfico</td></tr>';
+
+      // Combinaciones exactas de muestras activas: cada municipio cuenta una sola vez
+      const grupos = new Map();
+      lista.forEach(p => {
+        const id = activas.filter(c => p[c.k] === 1).map(c => c.k).join("+");
+        if (!grupos.has(id)) grupos.set(id, []);
+        grupos.get(id).push(p);
+      });
+      [...grupos.entries()]
+        .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+        .forEach(([id, ps]) => {
+          const claves = id.split("+");
+          const texto = claves.length === 1 ? POR_CLAVE[claves[0]].corto + " únicamente"
+                                            : claves.map(k => POR_CLAVE[k].corto).join(" + ");
+          html += fila("", muestraClaves(claves), texto, ps);
+        });
+      html += fila("total", "", "Municipios en el gráfico", lista);
+    }
+
+    html += '<tr><td colspan="4" class="subtitulo-tabla">Por muestra (con población en ' + anio + ')</td></tr>';
+    CATEGORIAS.forEach(c => {
+      html += fila(c.activa ? "" : "apagada", muestraCategoria(c), c.corto,
+                   props.filter(p => p[c.k] === 1 && conDato(p)));
+    });
+    html += "</tbody></table>";
+    document.getElementById("conteo").innerHTML = html;
+  }
+
+  const caja = document.getElementById("caja-conteo");
+  const plegar = document.getElementById("plegar");
+  plegar.addEventListener("click", () => {
+    const plegada = caja.classList.toggle("plegada");
+    plegar.textContent = plegada ? "+" : "−";
+    plegar.setAttribute("aria-expanded", !plegada);
+    plegar.setAttribute("aria-label", (plegada ? "Desplegar" : "Plegar") + " la caja de conteo");
+  });
+
+  // Mover la caja arrastrando su título, sin salir del área del gráfico
+  let movimiento = null;
+  caja.querySelector(".cabeza").addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    movimiento = { x: e.clientX - caja.offsetLeft, y: e.clientY - caja.offsetTop };
+    e.preventDefault();
+  });
+  window.addEventListener("pointermove", e => {
+    if (!movimiento) return;
+    const maxX = area.clientWidth - caja.offsetWidth - 4, maxY = area.clientHeight - 30;
+    caja.style.left = Math.min(Math.max(4, e.clientX - movimiento.x), Math.max(4, maxX)) + "px";
+    caja.style.top = Math.min(Math.max(4, e.clientY - movimiento.y), maxY) + "px";
+  });
+  window.addEventListener("pointerup", () => { movimiento = null; });
+
+  // ---- Panel: año, punto de corte y muestras ----
+
+  function botones(contenedor, opciones, texto, accion) {
+    return opciones.map(o => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = texto(o);
+      b.addEventListener("click", () => accion(o));
+      contenedor.appendChild(b);
+      return [o, b];
+    });
+  }
+
+  const botonesAnio = botones(document.getElementById("sel-anio"), ANIOS, String,
+                              a => { anio = a; actualizar(false); });
+  const ESCALAS = [{ id: "log", texto: "Logarítmica" }, { id: "lineal", texto: "Lineal" }];
+  const botonesEscala = botones(document.getElementById("sel-escala"), ESCALAS, e => e.texto,
+                                e => { escala = e.id; actualizarEscala(); });
+  function actualizarEscala() {
+    botonesEscala.forEach(([e, b]) => b.setAttribute("aria-pressed", e.id === escala));
+    document.getElementById("encabezado-texto").innerHTML =
+      "<b>Población total en " + anio + "</b> · Punto de corte: <b>" + abreviar(corte) + "</b>" +
+      "<br>Municipios ordenados de menor (izquierda) a mayor (derecha) población · " +
+      (escala === "log" ? "escala logarítmica" : "escala lineal hasta el municipio más poblado a la vista");
+    cerrarFicha();
+    escalar();
+  }
+
+  const botonesCorte = botones(document.getElementById("sel-corte"), CORTES, abreviar,
+                               c => { corte = c; actualizar(true); });
+
+  const capas = document.getElementById("capas");
+  CATEGORIAS.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.k = c.k;
+    b.innerHTML = '<span class="interruptor" aria-hidden="true"></span>' + muestraCategoria(c) + '<span class="texto"></span>';
+    b.addEventListener("click", () => { c.activa = !c.activa; actualizar(false); });
+    capas.appendChild(b);
+  });
+
+  function actualizar(conservarDesplazamiento) {
+    botonesAnio.forEach(([a, b]) => b.setAttribute("aria-pressed", a === anio));
+    botonesCorte.forEach(([c, b]) => b.setAttribute("aria-pressed", c === corte));
+    const nPdet = props.filter(p => p.pdet === 1 && conDato(p)).length;
+    capas.querySelectorAll("button").forEach(b => {
+      const c = POR_CLAVE[b.dataset.k];
+      b.setAttribute("aria-pressed", c.activa);
+      b.querySelector(".texto").textContent = c.k === "pdet" ? "PDET* (" + nPdet + "/" + DATOS.total_pdet + ")" : c.largo;
+    });
+    dibujar(conservarDesplazamiento);
+    actualizarEscala();
+  }
+
+  let espera;
+  window.addEventListener("resize", () => { clearTimeout(espera); espera = setTimeout(() => dibujar(false), 120); });
+
+  actualizar(false);
+</script>
+</body>
+</html>

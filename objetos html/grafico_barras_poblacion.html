@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<!-- Plantilla de grafico_barras_poblacion.R: la marca de datos del script se reemplaza por los datos -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comparativo de muestras por población</title>
+<!-- Colombia continental: sin el Archipiélago de San Andrés, Providencia y Santa Catalina -->
+<style>
+  :root {
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --panel: #f6f6f6;
+    --acento: #1a1a1a;
+    --corte: #D7191C;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, selectores, muestras y convenciones (como grafico_barras_d2_d3) */
+  #panel {
+    width: 340px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  #alcance {
+    margin: 10px 0 0; padding: 7px 10px; font-size: 12.5px; line-height: 1.4;
+    background: #fff; border-left: 3px solid var(--acento);
+  }
+  .seccion { margin-top: 18px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave); margin-bottom: 7px;
+  }
+
+  /* Selectores de opción única (año y punto de corte) */
+  .botones { display: grid; grid-template-columns: repeat(var(--columnas, 2), 1fr); gap: 6px; }
+  .botones button {
+    font: inherit; font-size: 13px; padding: 8px 6px; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px; line-height: 1.3;
+  }
+  .botones button:hover { border-color: var(--acento); }
+  .botones button[aria-pressed="true"] {
+    background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600;
+  }
+  .botones button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+  /* Interruptores de muestras (independientes), como en el mapa Comparativo de muestras */
+  #capas { display: grid; gap: 6px; }
+  #capas button {
+    font: inherit; font-size: 13px; line-height: 1.3; padding: 8px 10px; cursor: pointer; color: var(--texto);
+    text-align: left; background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  #capas button:hover { border-color: var(--acento); }
+  #capas button[aria-pressed="true"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+  #capas button[aria-pressed="false"] .muestra-color { opacity: .35; }
+  #capas button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  .interruptor { position: relative; width: 26px; height: 15px; flex: none; border-radius: 8px; background: #c4c4c4; transition: background .15s; }
+  .interruptor::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  [aria-pressed="true"] .interruptor { background: var(--acento); }
+  [aria-pressed="true"] .interruptor::after { transform: translateX(11px); }
+  .muestra-color { flex: none; display: block; }
+
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; }
+  .leyenda-item svg { flex: none; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+  code { font-family: Menlo, Consolas, monospace; font-size: .92em; }
+
+  /* Área del gráfico: encabezado con flechas de desplazamiento y barras debajo */
+  #contenedor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #encabezado {
+    flex: none; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 14px 18px 6px;
+  }
+  #encabezado-texto { font-size: 13.5px; line-height: 1.5; color: var(--texto-suave); }
+  #encabezado-texto b { color: var(--texto); }
+  #navegacion {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--texto-suave); font-variant-numeric: tabular-nums;
+  }
+  #navegacion button {
+    width: 36px; height: 32px; font: inherit; font-size: 20px; line-height: 1; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+  }
+  #navegacion button:hover:not(:disabled) { border-color: var(--acento); }
+  #navegacion button:disabled { opacity: .35; cursor: default; }
+  #navegacion button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  #posicion { min-width: 150px; text-align: center; }
+
+  #area { flex: 1; position: relative; min-height: 0; }
+  /* Eje vertical fijo; las barras se desplazan horizontalmente debajo de él */
+  #eje-y { position: absolute; left: 0; top: 0; z-index: 2; display: block; }
+  #desplazable {
+    position: absolute; left: 72px; right: 0; top: 0; bottom: 0;
+    overflow-x: auto; overflow-y: hidden; cursor: grab; outline: none;
+  }
+  #desplazable.arrastrando { cursor: grabbing; }
+  #barras { display: block; user-select: none; -webkit-user-select: none; }
+  #barras text, #eje-y text { font-family: inherit; }
+  .valor { font-size: 10px; fill: var(--texto); font-variant-numeric: tabular-nums; }
+  .nombre { font-size: 10.5px; fill: var(--texto); }
+  .eje { font-size: 11px; fill: var(--texto-suave); font-variant-numeric: tabular-nums; }
+  .col { cursor: pointer; outline: none; }
+  .col .fondo { fill: transparent; }
+  .col:hover .fondo, .col:focus-visible .fondo, .col.activa .fondo { fill: #ededed; }
+  .col:hover .nombre, .col:focus-visible .nombre, .col.activa .nombre,
+  .col:hover .valor, .col:focus-visible .valor, .col.activa .valor { font-weight: 700; }
+
+  /* Etiqueta al pasar el cursor y ficha (banner) al hacer clic */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 6; display: none; white-space: nowrap;
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 3px; padding: 4px 8px;
+    font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  #ficha {
+    position: absolute; z-index: 7; display: none; width: 300px;
+    background: #fff; border-radius: 12px; padding: 10px 30px 11px 13px;
+    font-size: 13px; line-height: 1.45; box-shadow: 0 3px 14px rgba(0,0,0,.4);
+  }
+  #ficha-cerrar {
+    position: absolute; top: 4px; right: 6px; border: 0; background: none; cursor: pointer;
+    font: 18px/1 inherit; color: #757575; padding: 4px;
+  }
+  #ficha-cerrar:hover { color: #000; }
+  .pop-nombre { font-weight: 700; font-size: 14.5px; }
+  .pop-dpto { color: var(--texto-suave); margin-bottom: 7px; }
+  .pop-cat { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .pop-fila { margin-top: 4px; }
+  .pop-suave { margin-top: 6px; color: var(--texto-suave); }
+
+  /* Caja de conteo flotante (como en el mapa): arriba a la izquierda, donde están las barras más bajas */
+  #caja-conteo {
+    position: absolute; left: 84px; top: 10px; z-index: 4;
+    width: 390px; max-width: calc(100% - 100px); max-height: calc(100% - 20px); overflow-y: auto;
+    background: rgba(255, 255, 255, .96); border: 1px solid #bdbdbd; border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .15); padding: 8px 11px;
+  }
+  /* La caja se mueve arrastrando su título */
+  #caja-conteo .cabeza { position: relative; margin-bottom: 4px; cursor: move; user-select: none; -webkit-user-select: none; }
+  #caja-conteo .titulo-caja { font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: center; }
+  #plegar {
+    position: absolute; right: -4px; top: -5px; width: 24px; height: 24px; padding: 0; cursor: pointer;
+    font: 16px/1 inherit; color: var(--texto-suave); background: none; border: 0; border-radius: 3px;
+  }
+  #plegar:hover { color: #000; background: #eee; }
+  #caja-conteo.plegada { overflow: hidden; width: 230px; }
+  #caja-conteo.plegada #conteo { display: none; }
+  #caja-conteo.plegada .cabeza { margin-bottom: 0; }
+  #conteo { font-size: 12px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+  #conteo table { width: 100%; border-collapse: collapse; }
+  #conteo th { font-size: 10.5px; font-weight: 600; color: var(--texto-suave); text-align: right; padding: 0 0 2px 10px; white-space: nowrap; }
+  #conteo td { padding: 2px 0; vertical-align: middle; }
+  #conteo td.n { text-align: right; font-weight: 600; padding-left: 10px; white-space: nowrap; }
+  #conteo td.sw { width: 32px; }
+  #conteo tr.apagada td { color: #9a9a9a; }
+  #conteo tr.apagada td.n { font-weight: 400; }
+  #conteo tr.apagada .muestra-color { opacity: .35; }
+  #conteo .subtitulo-tabla { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding-top: 8px; }
+  #conteo td.sw .muestra-color { width: 20px; height: 12px; }
+  #conteo tr.total td { border-top: 1px solid var(--borde); padding-top: 6px; }
+  #conteo .vacio { color: var(--texto-suave); font-style: italic; }
+  /* Filas dinámicas de superposición: una por cada par de muestras activas */
+  #conteo tr.superposicion td { background: #fff3c4; padding-top: 3px; padding-bottom: 3px; }
+  #conteo tr.superposicion td:first-child { padding-left: 6px; }
+  #conteo tr.superposicion td:last-child { padding-right: 6px; }
+  #conteo tr.superposicion.vacia td { color: #8a8a8a; }
+  #conteo tr.superposicion.vacia td.n { font-weight: 400; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; height: auto; }
+    #panel { width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { height: 90vh; flex: none; }
+    #encabezado { flex-direction: column; align-items: flex-start; }
+    #caja-conteo { width: 300px; max-height: 60%; }
+    #conteo { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Patrones de franjas diagonales para municipios en varias muestras activas (se crean en el script) -->
+<svg width="0" height="0" style="position: absolute" aria-hidden="true"><defs id="patrones"></defs></svg>
+
+<aside id="panel">
+  <h1>Comparativo de muestras por población</h1>
+  <p id="subtitulo">Población total de cada municipio en el año elegido, ordenada de menor (izquierda) a mayor (derecha). Active o desactive cada muestra; los municipios que pertenecen a varias muestras activas se muestran con franjas diagonales de los colores de cada una.</p>
+  <p id="alcance"><b>Colombia continental:</b> el gráfico y todos los conteos excluyen el Archipiélago de San Andrés, Providencia y Santa Catalina.</p>
+
+  <div class="seccion">
+    <div class="etiqueta">Población en el año</div>
+    <div id="sel-anio" class="botones" role="group" aria-label="Población en el año"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Punto de corte</div>
+    <div id="sel-corte" class="botones" style="--columnas: 4" role="group" aria-label="Punto de corte"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Escala</div>
+    <div id="sel-escala" class="botones" role="group" aria-label="Escala vertical"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Muestra</div>
+    <div id="capas" role="group" aria-label="Muestras visibles"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta">Convenciones</div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect width="22" height="14" fill="url(#rayas-m37-pdet)"/></svg>
+      <span>Franjas: el municipio pertenece a todas las muestras de sus colores</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="#fde4e4" stroke="#E00000" stroke-width="3"/></svg>
+      <span>Contorno rojo: capital departamental (relleno rosado si es solo capital)</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="#e4e4e4" stroke="#111" stroke-width="3"/></svg>
+      <span>Contorno negro: intermedia excluida (Tumaco, Uribia)</span>
+    </div>
+    <div class="leyenda-item">
+      <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#D7191C" stroke-width="2" stroke-dasharray="5 3"/></svg>
+      <span>Punto de corte de población</span>
+    </div>
+  </div>
+
+  <div class="seccion nota">
+    <p>Desplácese horizontalmente con la rueda del ratón o el trackpad, arrastrando el gráfico o con las flechas ‹ ›. Se ven 50 municipios a la vez; el gráfico abre en el extremo derecho, con los municipios más poblados. Pase el cursor sobre una barra para ver el municipio y haga clic para ver su ficha. La caja de conteo se mueve arrastrando su título y se pliega con −.</p>
+    <p>Escala logarítmica (por defecto): cada línea principal multiplica la población por 10. Escala lineal: el eje va de 0 al municipio más poblado a la vista (el de más a la derecha) y se ajusta al desplazar. El número sobre cada barra es la población redondeada (143k = 143.000 habitantes; 2,42M = 2.420.000).</p>
+    <p>* PDET: San José de Uré (Córdoba) fue creado en 2007 y no tiene población en 2005; en ese año se muestran 169 de los 170 municipios PDET.</p>
+    <p>Fuentes: población total (<code>pobl_tot</code>) del panel CEDE; nombres del MGN 2021 (DANE). Muestras como en el mapa Comparativo de muestras: 37 ciudades intermedias de Master.do (sección 4.1); las 2 excluidas son las del universo de 39 que son PNIS alta probabilidad (sección 12); capitales: código DANE terminado en 001, sin Agua de Dios (31 continentales, Bogotá incluida); PNIS: <code>d_pr_pnis.xls</code> (sección 3); PDET: Agencia de Renovación del Territorio, datos.gov.co (<code>idrk-ba8y</code>).</p>
+  </div>
+</aside>
+
+<main id="contenedor">
+  <div id="encabezado">
+    <div id="encabezado-texto"></div>
+    <div id="navegacion">
+      <button id="ir-izq" type="button" aria-label="Desplazar a la izquierda (municipios menos poblados)">‹</button>
+      <span id="posicion" aria-live="polite"></span>
+      <button id="ir-der" type="button" aria-label="Desplazar a la derecha (municipios más poblados)">›</button>
+    </div>
+  </div>
+  <div id="area">
+    <svg id="eje-y" aria-hidden="true"></svg>
+    <div id="desplazable" tabindex="0" aria-label="Gráfico de barras desplazable horizontalmente">
+      <svg id="barras" role="group" aria-label="Población total de cada municipio"></svg>
+    </div>
+    <section id="caja-conteo" aria-label="Conteo de municipios">
+      <div class="cabeza">
+        <div class="titulo-caja">Conteo de municipios</div>
+        <button id="plegar" type="button" aria-expanded="true" aria-label="Plegar la caja de conteo">−</button>
+      </div>
+      <div id="conteo" aria-live="polite"></div>
+    </section>
+    <div id="tip"></div>
+    <div id="ficha" role="dialog" aria-live="polite">
+      <button id="ficha-cerrar" type="button" aria-label="Cerrar">×</button>
+      <div id="ficha-contenido"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+  "use strict";
+
+  const DATOS = {"mpios":[{"cod":"05001","mpio":"MEDELLÍN","dpto":"ANTIOQUIA","p05":2214494,"p13":2417325,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"05031","mpio":"AMALFI","dpto":"ANTIOQUIA","p05":20525,"p13":21768,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05040","mpio":"ANORÍ","dpto":"ANTIOQUIA","p05":15016,"p13":16658,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05045","mpio":"APARTADÓ","dpto":"ANTIOQUIA","p05":131416,"p13":167895,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05088","mpio":"BELLO","dpto":"ANTIOQUIA","p05":371625,"p13":438577,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"05107","mpio":"BRICEÑO","dpto":"ANTIOQUIA","p05":8783,"p13":8720,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05120","mpio":"CÁCERES","dpto":"ANTIOQUIA","p05":28945,"p13":35823,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05147","mpio":"CAREPA","dpto":"ANTIOQUIA","p05":43125,"p13":53048,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05154","mpio":"CAUCASIA","dpto":"ANTIOQUIA","p05":87543,"p13":106887,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05172","mpio":"CHIGORODÓ","dpto":"ANTIOQUIA","p05":58922,"p13":72453,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05234","mpio":"DABEIBA","dpto":"ANTIOQUIA","p05":24084,"p13":23560,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05250","mpio":"EL BAGRE","dpto":"ANTIOQUIA","p05":46020,"p13":48914,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05266","mpio":"ENVIGADO","dpto":"ANTIOQUIA","p05":174150,"p13":212283,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"05360","mpio":"ITAGÜÍ","dpto":"ANTIOQUIA","p05":234973,"p13":261662,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"05361","mpio":"ITUANGO","dpto":"ANTIOQUIA","p05":25088,"p13":21757,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05475","mpio":"MURINDÓ","dpto":"ANTIOQUIA","p05":3736,"p13":4402,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"05480","mpio":"MUTATÁ","dpto":"ANTIOQUIA","p05":16428,"p13":19714,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05490","mpio":"NECOCLÍ","dpto":"ANTIOQUIA","p05":47989,"p13":59230,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05495","mpio":"NECHÍ","dpto":"ANTIOQUIA","p05":20668,"p13":25311,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05604","mpio":"REMEDIOS","dpto":"ANTIOQUIA","p05":22769,"p13":27832,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05652","mpio":"SAN FRANCISCO","dpto":"ANTIOQUIA","p05":6395,"p13":5521,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"05665","mpio":"SAN PEDRO DE URABÁ","dpto":"ANTIOQUIA","p05":28772,"p13":30785,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05736","mpio":"SEGOVIA","dpto":"ANTIOQUIA","p05":35071,"p13":39163,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05790","mpio":"TARAZÁ","dpto":"ANTIOQUIA","p05":32943,"p13":40355,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05837","mpio":"TURBO","dpto":"ANTIOQUIA","p05":121885,"p13":151161,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"URABÁ ANTIOQUEÑO"},{"cod":"05854","mpio":"VALDIVIA","dpto":"ANTIOQUIA","p05":17290,"p13":21092,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"05873","mpio":"VIGÍA DEL FUERTE","dpto":"ANTIOQUIA","p05":5487,"p13":5556,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"05893","mpio":"YONDÓ","dpto":"ANTIOQUIA","p05":15097,"p13":17867,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE BOLÍVAR"},{"cod":"05895","mpio":"ZARAGOZA","dpto":"ANTIOQUIA","p05":26959,"p13":29989,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"BAJO CAUCA Y NORDESTE ANTIOQUEÑO"},{"cod":"08001","mpio":"BARRANQUILLA","dpto":"ATLÁNTICO","p05":1146498,"p13":1206946,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"08758","mpio":"SOLEDAD","dpto":"ATLÁNTICO","p05":461603,"p13":582774,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"11001","mpio":"BOGOTÁ, D.C.","dpto":"BOGOTÁ, D.C.","p05":6840116,"p13":7674366,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"13001","mpio":"CARTAGENA DE INDIAS","dpto":"BOLÍVAR","p05":893033,"p13":978600,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"13030","mpio":"ALTOS DEL ROSARIO","dpto":"BOLÍVAR","p05":11357,"p13":13159,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13042","mpio":"ARENAL","dpto":"BOLÍVAR","p05":15414,"p13":18082,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"SUR DE BOLÍVAR"},{"cod":"13062","mpio":"ARROYOHONDO","dpto":"BOLÍVAR","p05":8804,"p13":9656,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13160","mpio":"CANTAGALLO","dpto":"BOLÍVAR","p05":7811,"p13":8919,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"SUR DE BOLÍVAR"},{"cod":"13212","mpio":"CÓRDOBA","dpto":"BOLÍVAR","p05":13113,"p13":12527,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13244","mpio":"EL CARMEN DE BOLÍVAR","dpto":"BOLÍVAR","p05":67963,"p13":73457,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13248","mpio":"EL GUAMO","dpto":"BOLÍVAR","p05":7826,"p13":7768,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13300","mpio":"HATILLO DE LOBA","dpto":"BOLÍVAR","p05":11470,"p13":11846,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13440","mpio":"MARGARITA","dpto":"BOLÍVAR","p05":9406,"p13":9718,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13442","mpio":"MARÍA LA BAJA","dpto":"BOLÍVAR","p05":45395,"p13":47410,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13458","mpio":"MONTECRISTO","dpto":"BOLÍVAR","p05":16973,"p13":20262,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13473","mpio":"MORALES","dpto":"BOLÍVAR","p05":18523,"p13":20566,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE BOLÍVAR"},{"cod":"13654","mpio":"SAN JACINTO","dpto":"BOLÍVAR","p05":21593,"p13":21498,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13655","mpio":"SAN JACINTO DEL CAUCA","dpto":"BOLÍVAR","p05":10935,"p13":12857,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13657","mpio":"SAN JUAN NEPOMUCENO","dpto":"BOLÍVAR","p05":32514,"p13":33231,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"13670","mpio":"SAN PABLO","dpto":"BOLÍVAR","p05":27010,"p13":31876,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"SUR DE BOLÍVAR"},{"cod":"13688","mpio":"SANTA ROSA DEL SUR","dpto":"BOLÍVAR","p05":34015,"p13":40200,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE BOLÍVAR"},{"cod":"13744","mpio":"SIMITÍ","dpto":"BOLÍVAR","p05":18418,"p13":19726,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE BOLÍVAR"},{"cod":"13810","mpio":"TIQUISIO","dpto":"BOLÍVAR","p05":18786,"p13":21243,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"13894","mpio":"ZAMBRANO","dpto":"BOLÍVAR","p05":11110,"p13":11459,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"15001","mpio":"TUNJA","dpto":"BOYACÁ","p05":154066,"p13":181418,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"17001","mpio":"MANIZALES","dpto":"CALDAS","p05":379794,"p13":393167,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"18001","mpio":"FLORENCIA","dpto":"CAQUETÁ","p05":144052,"p13":166342,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18029","mpio":"ALBANIA","dpto":"CAQUETÁ","p05":6394,"p13":6429,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18094","mpio":"BELÉN DE LOS ANDAQUÍES","dpto":"CAQUETÁ","p05":11081,"p13":11428,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18150","mpio":"CARTAGENA DEL CHAIRÁ","dpto":"CAQUETÁ","p05":28678,"p13":32384,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18205","mpio":"CURILLO","dpto":"CAQUETÁ","p05":11121,"p13":11574,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18247","mpio":"EL DONCELLO","dpto":"CAQUETÁ","p05":21547,"p13":22039,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18256","mpio":"EL PAUJÍL","dpto":"CAQUETÁ","p05":17634,"p13":19642,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18410","mpio":"LA MONTAÑITA","dpto":"CAQUETÁ","p05":22181,"p13":23295,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18460","mpio":"MILÁN","dpto":"CAQUETÁ","p05":11487,"p13":11690,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18479","mpio":"MORELIA","dpto":"CAQUETÁ","p05":3718,"p13":3773,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18592","mpio":"PUERTO RICO","dpto":"CAQUETÁ","p05":32408,"p13":33165,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18610","mpio":"SAN JOSÉ DEL FRAGUA","dpto":"CAQUETÁ","p05":13882,"p13":14712,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18753","mpio":"SAN VICENTE DEL CAGUÁN","dpto":"CAQUETÁ","p05":56674,"p13":65590,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18756","mpio":"SOLANO","dpto":"CAQUETÁ","p05":19427,"p13":22757,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18785","mpio":"SOLITA","dpto":"CAQUETÁ","p05":9134,"p13":9143,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"18860","mpio":"VALPARAÍSO","dpto":"CAQUETÁ","p05":11100,"p13":11524,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"19001","mpio":"POPAYÁN","dpto":"CAUCA","p05":257405,"p13":272709,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"19050","mpio":"ARGELIA","dpto":"CAUCA","p05":24538,"p13":26221,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19075","mpio":"BALBOA","dpto":"CAUCA","p05":23602,"p13":25174,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19110","mpio":"BUENOS AIRES","dpto":"CAUCA","p05":26961,"p13":31062,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19130","mpio":"CAJIBÍO","dpto":"CAUCA","p05":34706,"p13":36909,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19137","mpio":"CALDONO","dpto":"CAUCA","p05":30906,"p13":32613,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19142","mpio":"CALOTO","dpto":"CAUCA","p05":36921,"p13":17568,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19212","mpio":"CORINTO","dpto":"CAUCA","p05":28310,"p13":31090,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19256","mpio":"EL TAMBO","dpto":"CAUCA","p05":45804,"p13":47215,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19318","mpio":"GUAPI","dpto":"CAUCA","p05":28663,"p13":29555,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO MEDIO"},{"cod":"19364","mpio":"JAMBALÓ","dpto":"CAUCA","p05":14625,"p13":16901,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19418","mpio":"LÓPEZ DE MICAY","dpto":"CAUCA","p05":19326,"p13":20074,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO MEDIO"},{"cod":"19450","mpio":"MERCADERES","dpto":"CAUCA","p05":17702,"p13":17977,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19455","mpio":"MIRANDA","dpto":"CAUCA","p05":33245,"p13":38286,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19473","mpio":"MORALES","dpto":"CAUCA","p05":24391,"p13":25589,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19532","mpio":"PATÍA","dpto":"CAUCA","p05":33195,"p13":35553,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19533","mpio":"PIAMONTE","dpto":"CAUCA","p05":7083,"p13":7273,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"19548","mpio":"PIENDAMÓ - TUNÍA","dpto":"CAUCA","p05":35804,"p13":41321,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19698","mpio":"SANTANDER DE QUILICHAO","dpto":"CAUCA","p05":80282,"p13":90682,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19780","mpio":"SUÁREZ","dpto":"CAUCA","p05":19244,"p13":18754,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"19809","mpio":"TIMBIQUÍ","dpto":"CAUCA","p05":20885,"p13":21384,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO MEDIO"},{"cod":"19821","mpio":"TORIBÍO","dpto":"CAUCA","p05":26512,"p13":28561,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"20001","mpio":"VALLEDUPAR","dpto":"CESAR","p05":354582,"p13":433242,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":1,"pnis":null,"sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20013","mpio":"AGUSTÍN CODAZZI","dpto":"CESAR","p05":53969,"p13":51566,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20045","mpio":"BECERRIL","dpto":"CESAR","p05":13941,"p13":13569,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20400","mpio":"LA JAGUA DE IBIRICO","dpto":"CESAR","p05":22082,"p13":22230,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20443","mpio":"MANAURE BALCÓN DEL CESAR","dpto":"CESAR","p05":11317,"p13":13848,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20570","mpio":"PUEBLO BELLO","dpto":"CESAR","p05":17228,"p13":21195,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20621","mpio":"LA PAZ","dpto":"CESAR","p05":21874,"p13":22679,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"20750","mpio":"SAN DIEGO","dpto":"CESAR","p05":13772,"p13":13475,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"23001","mpio":"MONTERÍA","dpto":"CÓRDOBA","p05":379094,"p13":428579,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"23090","mpio":"CANALETE","dpto":"CÓRDOBA","p05":17315,"p13":20591,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"23419","mpio":"LOS CÓRDOBAS","dpto":"CÓRDOBA","p05":17837,"p13":22399,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"23466","mpio":"MONTELÍBANO","dpto":"CÓRDOBA","p05":73258,"p13":77770,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE CÓRDOBA"},{"cod":"23580","mpio":"PUERTO LIBERTADOR","dpto":"CÓRDOBA","p05":35186,"p13":44694,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"SUR DE CÓRDOBA"},{"cod":"23682","mpio":"SAN JOSÉ DE URÉ","dpto":"CÓRDOBA","p05":null,"p13":10664,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE CÓRDOBA"},{"cod":"23807","mpio":"TIERRALTA","dpto":"CÓRDOBA","p05":78680,"p13":95228,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"SUR DE CÓRDOBA"},{"cod":"23855","mpio":"VALENCIA","dpto":"CÓRDOBA","p05":34373,"p13":41084,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DE CÓRDOBA"},{"cod":"25754","mpio":"SOACHA","dpto":"CUNDINAMARCA","p05":401996,"p13":488995,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"27001","mpio":"QUIBDÓ","dpto":"CHOCÓ","p05":112909,"p13":115290,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"27006","mpio":"ACANDÍ","dpto":"CHOCÓ","p05":10455,"p13":9756,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CHOCÓ"},{"cod":"27025","mpio":"ALTO BAUDÓ","dpto":"CHOCÓ","p05":28961,"p13":34969,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27050","mpio":"ATRATO","dpto":"CHOCÓ","p05":7561,"p13":9402,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27073","mpio":"BAGADÓ","dpto":"CHOCÓ","p05":8454,"p13":8146,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27077","mpio":"BAJO BAUDÓ","dpto":"CHOCÓ","p05":16375,"p13":17183,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27099","mpio":"BOJAYÁ","dpto":"CHOCÓ","p05":9941,"p13":10066,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27135","mpio":"EL CANTÓN DEL SAN PABLO","dpto":"CHOCÓ","p05":6213,"p13":7589,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27150","mpio":"CARMEN DEL DARIÉN","dpto":"CHOCÓ","p05":5111,"p13":5400,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27205","mpio":"CONDOTO","dpto":"CHOCÓ","p05":13098,"p13":14328,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CHOCÓ"},{"cod":"27250","mpio":"EL LITORAL DEL SAN JUAN","dpto":"CHOCÓ","p05":12244,"p13":14569,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27361","mpio":"ISTMINA","dpto":"CHOCÓ","p05":23639,"p13":25012,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27372","mpio":"JURADÓ","dpto":"CHOCÓ","p05":3609,"p13":3373,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27425","mpio":"MEDIO ATRATO","dpto":"CHOCÓ","p05":21037,"p13":27602,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27430","mpio":"MEDIO BAUDÓ","dpto":"CHOCÓ","p05":11715,"p13":13175,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27450","mpio":"MEDIO SAN JUAN","dpto":"CHOCÓ","p05":13027,"p13":15596,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27491","mpio":"NÓVITA","dpto":"CHOCÓ","p05":7867,"p13":7940,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27580","mpio":"RÍO IRÓ","dpto":"CHOCÓ","p05":8084,"p13":9356,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27600","mpio":"RÍO QUITO","dpto":"CHOCÓ","p05":7888,"p13":8743,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27615","mpio":"RIOSUCIO","dpto":"CHOCÓ","p05":28230,"p13":28719,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CHOCÓ"},{"cod":"27660","mpio":"SAN JOSÉ DEL PALMAR","dpto":"CHOCÓ","p05":5068,"p13":4875,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"27745","mpio":"SIPÍ","dpto":"CHOCÓ","p05":3481,"p13":3935,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27800","mpio":"UNGUÍA","dpto":"CHOCÓ","p05":14544,"p13":15021,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CHOCÓ"},{"cod":"27810","mpio":"UNIÓN PANAMERICANA","dpto":"CHOCÓ","p05":8161,"p13":9298,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"41001","mpio":"NEIVA","dpto":"HUILA","p05":315999,"p13":337848,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"41020","mpio":"ALGECIRAS","dpto":"HUILA","p05":23433,"p13":24348,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"CUENCA DEL CAGUÁN Y PIEDEMONTE CAQUETEÑO"},{"cod":"44001","mpio":"RIOHACHA","dpto":"LA GUAJIRA","p05":167886,"p13":240951,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"44090","mpio":"DIBULLA","dpto":"LA GUAJIRA","p05":21798,"p13":30614,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"44279","mpio":"FONSECA","dpto":"LA GUAJIRA","p05":26831,"p13":32116,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"44430","mpio":"MAICAO","dpto":"LA GUAJIRA","p05":123768,"p13":151469,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"44560","mpio":"MANAURE","dpto":"LA GUAJIRA","p05":67584,"p13":96080,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"44650","mpio":"SAN JUAN DEL CESAR","dpto":"LA GUAJIRA","p05":33654,"p13":36399,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"44847","mpio":"URIBIA","dpto":"LA GUAJIRA","p05":117601,"p13":162362,"m37":0,"cap":0,"exc":1,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"47001","mpio":"SANTA MARTA","dpto":"MAGDALENA","p05":415404,"p13":469066,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":1,"pnis":null,"sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"47053","mpio":"ARACATACA","dpto":"MAGDALENA","p05":35520,"p13":38587,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"47189","mpio":"CIÉNAGA","dpto":"MAGDALENA","p05":101987,"p13":103792,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"47288","mpio":"FUNDACIÓN","dpto":"MAGDALENA","p05":56997,"p13":57246,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SIERRA NEVADA - PERIJÁ"},{"cod":"47460","mpio":"NUEVA GRANADA","dpto":"MAGDALENA","p05":16134,"p13":18959,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"47703","mpio":"SAN ZENÓN","dpto":"MAGDALENA","p05":8904,"p13":9062,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"47960","mpio":"ZAPAYÁN","dpto":"MAGDALENA","p05":8642,"p13":8749,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"50001","mpio":"VILLAVICENCIO","dpto":"META","p05":380328,"p13":463121,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"50325","mpio":"MAPIRIPÁN","dpto":"META","p05":13230,"p13":16389,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"50330","mpio":"MESETAS","dpto":"META","p05":10695,"p13":11160,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"50350","mpio":"LA MACARENA","dpto":"META","p05":24164,"p13":31015,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"50370","mpio":"URIBE","dpto":"META","p05":12480,"p13":15386,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"50450","mpio":"PUERTO CONCORDIA","dpto":"META","p05":15964,"p13":19827,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"50577","mpio":"PUERTO LLERAS","dpto":"META","p05":10666,"p13":10037,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"50590","mpio":"PUERTO RICO","dpto":"META","p05":17368,"p13":18418,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"50711","mpio":"VISTAHERMOSA","dpto":"META","p05":21048,"p13":24586,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"52001","mpio":"PASTO","dpto":"NARIÑO","p05":382422,"p13":428890,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"52079","mpio":"BARBACOAS","dpto":"NARIÑO","p05":30270,"p13":36214,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52233","mpio":"CUMBITARA","dpto":"NARIÑO","p05":11425,"p13":14385,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"52250","mpio":"EL CHARCO","dpto":"NARIÑO","p05":25733,"p13":34300,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52256","mpio":"EL ROSARIO","dpto":"NARIÑO","p05":11368,"p13":10455,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"52390","mpio":"LA TOLA","dpto":"NARIÑO","p05":8408,"p13":11591,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52405","mpio":"LEIVA","dpto":"NARIÑO","p05":11785,"p13":13449,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"52411","mpio":"LINARES","dpto":"NARIÑO","p05":11821,"p13":10394,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"52418","mpio":"LOS ANDES","dpto":"NARIÑO","p05":16249,"p13":18738,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"52427","mpio":"MAGÜÍ","dpto":"NARIÑO","p05":16394,"p13":21086,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52473","mpio":"MOSQUERA","dpto":"NARIÑO","p05":11995,"p13":15328,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52490","mpio":"OLAYA HERRERA","dpto":"NARIÑO","p05":27359,"p13":30456,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52520","mpio":"FRANCISCO PIZARRO","dpto":"NARIÑO","p05":11029,"p13":14143,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52540","mpio":"POLICARPA","dpto":"NARIÑO","p05":13785,"p13":16204,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"52612","mpio":"RICAURTE","dpto":"NARIÑO","p05":14904,"p13":17862,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52621","mpio":"ROBERTO PAYÁN","dpto":"NARIÑO","p05":16892,"p13":21332,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52678","mpio":"SAMANIEGO","dpto":"NARIÑO","p05":50437,"p13":49726,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"52696","mpio":"SANTA BÁRBARA","dpto":"NARIÑO","p05":15332,"p13":14878,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"52835","mpio":"SAN ANDRÉS DE TUMACO","dpto":"NARIÑO","p05":159955,"p13":191218,"m37":0,"cap":0,"exc":1,"alta":1,"pdet":1,"pnis":"alta","sub":"PACÍFICO Y FRONTERA NARIÑENSE"},{"cod":"54001","mpio":"SAN JOSÉ DE CÚCUTA","dpto":"NORTE DE SANTANDER","p05":587567,"p13":637302,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"54206","mpio":"CONVENCIÓN","dpto":"NORTE DE SANTANDER","p05":16605,"p13":14107,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54245","mpio":"EL CARMEN","dpto":"NORTE DE SANTANDER","p05":16377,"p13":14453,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54250","mpio":"EL TARRA","dpto":"NORTE DE SANTANDER","p05":10772,"p13":10900,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54344","mpio":"HACARÍ","dpto":"NORTE DE SANTANDER","p05":10121,"p13":10532,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54385","mpio":"LA ESPERANZA","dpto":"NORTE DE SANTANDER","p05":10953,"p13":11790,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"54670","mpio":"SAN CALIXTO","dpto":"NORTE DE SANTANDER","p05":12581,"p13":13292,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54720","mpio":"SARDINATA","dpto":"NORTE DE SANTANDER","p05":22733,"p13":22655,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54800","mpio":"TEORAMA","dpto":"NORTE DE SANTANDER","p05":17523,"p13":20638,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"54810","mpio":"TIBÚ","dpto":"NORTE DE SANTANDER","p05":34773,"p13":36105,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"CATATUMBO"},{"cod":"63001","mpio":"ARMENIA","dpto":"QUINDIO","p05":280881,"p13":293605,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"66001","mpio":"PEREIRA","dpto":"RISARALDA","p05":443442,"p13":464719,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"66170","mpio":"DOSQUEBRADAS","dpto":"RISARALDA","p05":179282,"p13":194976,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"68001","mpio":"BUCARAMANGA","dpto":"SANTANDER","p05":516460,"p13":526827,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"68081","mpio":"BARRANCABERMEJA","dpto":"SANTANDER","p05":190069,"p13":191764,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"68276","mpio":"FLORIDABLANCA","dpto":"SANTANDER","p05":254600,"p13":263908,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"68307","mpio":"GIRÓN","dpto":"SANTANDER","p05":135860,"p13":170771,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"70001","mpio":"SINCELEJO","dpto":"SUCRE","p05":237639,"p13":267571,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"70204","mpio":"COLOSÓ","dpto":"SUCRE","p05":6214,"p13":5915,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70230","mpio":"CHALÁN","dpto":"SUCRE","p05":4188,"p13":4322,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70418","mpio":"LOS PALMITOS","dpto":"SUCRE","p05":19315,"p13":19270,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70473","mpio":"MORROA","dpto":"SUCRE","p05":12846,"p13":14087,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70508","mpio":"OVEJAS","dpto":"SUCRE","p05":21658,"p13":21196,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70523","mpio":"PALMITO","dpto":"SUCRE","p05":11361,"p13":13176,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70713","mpio":"SAN ONOFRE","dpto":"SUCRE","p05":46383,"p13":49372,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"70823","mpio":"SAN JOSÉ DE TOLUVIEJO","dpto":"SUCRE","p05":18955,"p13":18903,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MONTES DE MARÍA"},{"cod":"73001","mpio":"IBAGUÉ","dpto":"TOLIMA","p05":498130,"p13":542876,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"73067","mpio":"ATACO","dpto":"TOLIMA","p05":21942,"p13":22371,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DEL TOLIMA"},{"cod":"73168","mpio":"CHAPARRAL","dpto":"TOLIMA","p05":46712,"p13":47082,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DEL TOLIMA"},{"cod":"73555","mpio":"PLANADAS","dpto":"TOLIMA","p05":29417,"p13":29832,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DEL TOLIMA"},{"cod":"73616","mpio":"RIOBLANCO","dpto":"TOLIMA","p05":25636,"p13":24756,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"SUR DEL TOLIMA"},{"cod":"76001","mpio":"CALI","dpto":"VALLE DEL CAUCA","p05":2119843,"p13":2319684,"m37":1,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"76109","mpio":"BUENAVENTURA","dpto":"VALLE DEL CAUCA","p05":328753,"p13":384504,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":null,"sub":"PACÍFICO MEDIO"},{"cod":"76275","mpio":"FLORIDA","dpto":"VALLE DEL CAUCA","p05":55996,"p13":57699,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"76520","mpio":"PALMIRA","dpto":"VALLE DEL CAUCA","p05":284319,"p13":300707,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":null,"sub":null},{"cod":"76563","mpio":"PRADERA","dpto":"VALLE DEL CAUCA","p05":48845,"p13":53804,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ALTO PATÍA Y NORTE DEL CAUCA"},{"cod":"76834","mpio":"TULUÁ","dpto":"VALLE DEL CAUCA","p05":187249,"p13":206610,"m37":1,"cap":0,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"81001","mpio":"ARAUCA","dpto":"ARAUCA","p05":75568,"p13":85994,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"81065","mpio":"ARAUQUITA","dpto":"ARAUCA","p05":36745,"p13":40432,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ARAUCA"},{"cod":"81300","mpio":"FORTUL","dpto":"ARAUCA","p05":21851,"p13":24663,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ARAUCA"},{"cod":"81736","mpio":"SARAVENA","dpto":"ARAUCA","p05":42766,"p13":46425,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ARAUCA"},{"cod":"81794","mpio":"TAME","dpto":"ARAUCA","p05":47576,"p13":51762,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"ARAUCA"},{"cod":"85001","mpio":"YOPAL","dpto":"CASANARE","p05":106762,"p13":133220,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"86001","mpio":"MOCOA","dpto":"PUTUMAYO","p05":35755,"p13":40579,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"PUTUMAYO"},{"cod":"86320","mpio":"ORITO","dpto":"PUTUMAYO","p05":43654,"p13":50424,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86568","mpio":"PUERTO ASÍS","dpto":"PUTUMAYO","p05":55759,"p13":58951,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86569","mpio":"PUERTO CAICEDO","dpto":"PUTUMAYO","p05":14206,"p13":14484,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86571","mpio":"PUERTO GUZMÁN","dpto":"PUTUMAYO","p05":22679,"p13":23426,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86573","mpio":"PUERTO LEGUÍZAMO","dpto":"PUTUMAYO","p05":16044,"p13":15517,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86757","mpio":"SAN MIGUEL","dpto":"PUTUMAYO","p05":21838,"p13":25476,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86865","mpio":"VALLE DEL GUAMUEZ","dpto":"PUTUMAYO","p05":44959,"p13":50582,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"86885","mpio":"VILLAGARZÓN","dpto":"PUTUMAYO","p05":20785,"p13":21004,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"PUTUMAYO"},{"cod":"91001","mpio":"LETICIA","dpto":"AMAZONAS","p05":37832,"p13":40673,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"91430","mpio":"LA VICTORIA","dpto":"AMAZONAS","p05":979,"p13":1078,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"91460","mpio":"MIRITÍ - PARANÁ","dpto":"AMAZONAS","p05":1643,"p13":1546,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"91530","mpio":"PUERTO ALEGRÍA","dpto":"AMAZONAS","p05":1277,"p13":1788,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"94001","mpio":"INÍRIDA","dpto":"GUAINÍA","p05":17866,"p13":19464,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"94343","mpio":"BARRANCOMINAS","dpto":"GUAINÍA","p05":4384,"p13":4776,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"94884","mpio":"PUERTO COLOMBIA","dpto":"GUAINÍA","p05":3753,"p13":4538,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"94885","mpio":"LA GUADALUPE","dpto":"GUAINÍA","p05":225,"p13":326,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"94887","mpio":"PANA PANA","dpto":"GUAINÍA","p05":2224,"p13":2948,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"94888","mpio":"MORICHAL","dpto":"GUAINÍA","p05":752,"p13":1089,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"95001","mpio":"SAN JOSÉ DEL GUAVIARE","dpto":"GUAVIARE","p05":53994,"p13":62437,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"95015","mpio":"CALAMAR","dpto":"GUAVIARE","p05":11183,"p13":9519,"m37":0,"cap":0,"exc":0,"alta":0,"pdet":1,"pnis":"baja","sub":"MACARENA - GUAVIARE"},{"cod":"95025","mpio":"EL RETORNO","dpto":"GUAVIARE","p05":19063,"p13":22192,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"95200","mpio":"MIRAFLORES","dpto":"GUAVIARE","p05":11311,"p13":13786,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":1,"pnis":"alta","sub":"MACARENA - GUAVIARE"},{"cod":"97001","mpio":"MITÚ","dpto":"VAUPÉS","p05":28382,"p13":30962,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null},{"cod":"97161","mpio":"CARURÚ","dpto":"VAUPÉS","p05":3242,"p13":3317,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"97511","mpio":"PACOA","dpto":"VAUPÉS","p05":4459,"p13":5445,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"97777","mpio":"PAPUNAHUA","dpto":"VAUPÉS","p05":879,"p13":853,"m37":0,"cap":0,"exc":0,"alta":1,"pdet":0,"pnis":"alta","sub":null},{"cod":"99001","mpio":"PUERTO CARREÑO","dpto":"VICHADA","p05":13288,"p13":15258,"m37":0,"cap":1,"exc":0,"alta":0,"pdet":0,"pnis":"baja","sub":null}],"total_pdet":170};
+
+  const NS = "http://www.w3.org/2000/svg";
+
+  // Muestras en orden fijo (el de los interruptores). Mismos colores que el mapa Comparativo de muestras:
+  // relleno para muestra 37, PNIS alta y PDET (franjas si hay varias); contorno para capitales y excluidas.
+  const CATEGORIAS = [
+    { k: "m37",  corto: "Muestra 37",            largo: "37 Ciudades intermedias (>150k en 2013)",   color: "#2a78d6", relleno: true,  activa: true },
+    { k: "cap",  corto: "Capital",               largo: "Capitales",                                 color: "#E00000", relleno: false, tinte: "#fde4e4", activa: true },
+    { k: "exc",  corto: "Intermedias PNIS High", largo: "2 intermedias excluidas (Tumaco, Uribia)",  color: "#111111", relleno: false, tinte: "#e4e4e4", activa: true },
+    { k: "alta", corto: "PNIS alta",             largo: "PNIS High Probability",                     color: "#eb6834", relleno: true,  activa: false },
+    { k: "pdet", corto: "PDET",                  largo: "PDET*",                                     color: "#1baf7a", relleno: true,  activa: false }
+  ];
+  const RELLENOS = CATEGORIAS.filter(c => c.relleno);
+  const CONTORNOS = CATEGORIAS.filter(c => !c.relleno);
+  const POR_CLAVE = Object.fromEntries(CATEGORIAS.map(c => [c.k, c]));
+
+  const ANIOS = [2005, 2013];
+  const CORTES = [50000, 100000, 150000, 200000];
+  const VENTANA = 50;        // municipios visibles a la vez
+  const EJE = 72;            // ancho del eje vertical fijo (px)
+  const ANCHO_FRANJA = 4;    // píxeles por color en las franjas
+
+  let anio = 2013;
+  let corte = 150000;
+  let escala = "log";   // "log" (por defecto) o "lineal"
+
+  const props = DATOS.mpios;
+  const pob = p => anio === 2005 ? p.p05 : p.p13;
+  const conDato = p => pob(p) !== null;
+  const nombre = p => p.mpio + " (" + p.dpto + ")";
+  const miles = n => n.toLocaleString("es-CO");
+  const fmt = (v, d) => v.toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // Población abreviada: 143k; menos de 10.000 con un decimal (9,6k); millones con dos (2,42M)
+  function abreviar(v) {
+    if (v >= 1e6) return fmt(v / 1e6, 2) + "M";
+    if (v >= 1e4) return Math.round(v / 1e3) + "k";
+    return fmt(v / 1e3, 1) + "k";
+  }
+  const etiquetaEje = v => (v >= 1e6 ? (v / 1e6) + "M" : v >= 1e3 ? (v / 1e3) + "k" : String(v)).replace(".", ",");
+
+  // ---- Patrones de franjas: uno por cada combinación de 2 o más muestras con relleno ----
+
+  const defs = document.getElementById("patrones");
+  const idPatron = claves => "rayas-" + claves.join("-");
+
+  for (let mascara = 1; mascara < (1 << RELLENOS.length); mascara++) {
+    const cats = RELLENOS.filter((c, i) => mascara & (1 << i));
+    if (cats.length < 2) continue;
+    const lado = cats.length * ANCHO_FRANJA;
+    const patron = document.createElementNS(NS, "pattern");
+    patron.setAttribute("id", idPatron(cats.map(c => c.k)));
+    patron.setAttribute("patternUnits", "userSpaceOnUse");
+    patron.setAttribute("width", lado);
+    patron.setAttribute("height", lado);
+    patron.setAttribute("patternTransform", "rotate(45)");
+    cats.forEach((c, i) => {
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", i * ANCHO_FRANJA);
+      r.setAttribute("y", 0);
+      r.setAttribute("width", ANCHO_FRANJA);
+      r.setAttribute("height", lado);
+      r.setAttribute("fill", c.color);
+      patron.appendChild(r);
+    });
+    defs.appendChild(patron);
+  }
+
+  // Relleno y contorno de una barra según las muestras activas a las que pertenece el municipio
+  function aspecto(p) {
+    const rellenos = RELLENOS.filter(c => c.activa && p[c.k] === 1);
+    const borde = CONTORNOS.find(c => c.activa && p[c.k] === 1) || null;
+    let fill;
+    if (rellenos.length === 1) fill = rellenos[0].color;
+    else if (rellenos.length > 1) fill = "url(#" + idPatron(rellenos.map(c => c.k)) + ")";
+    else fill = borde ? borde.tinte : "#ccc";
+    return { fill, borde };
+  }
+
+  // Muestra de color (SVG) para la leyenda: relleno sólido, franjas o tinte, y contorno grueso opcional
+  function muestraColor(clavesRelleno, contorno, ancho = 22, alto = 14) {
+    let fill = "none";
+    if (clavesRelleno.length === 1) fill = POR_CLAVE[clavesRelleno[0]].color;
+    else if (clavesRelleno.length > 1) fill = "url(#" + idPatron(clavesRelleno) + ")";
+    else if (contorno) fill = contorno.tinte;
+    const borde = contorno
+      ? '<rect x="1.5" y="1.5" width="' + (ancho - 3) + '" height="' + (alto - 3) + '" fill="none" stroke="' + contorno.color + '" stroke-width="3"/>'
+      : (fill === "none" ? '<rect x="0.5" y="0.5" width="' + (ancho - 1) + '" height="' + (alto - 1) + '" fill="none" stroke="#bdbdbd"/>' : "");
+    return '<svg class="muestra-color" width="' + ancho + '" height="' + alto + '" aria-hidden="true">' +
+      '<rect width="' + ancho + '" height="' + alto + '" fill="' + fill + '"/>' + borde + '</svg>';
+  }
+  const muestraClaves = claves => muestraColor(
+    claves.filter(k => POR_CLAVE[k].relleno),
+    CONTORNOS.find(c => claves.includes(c.k)) || null);
+  const muestraCategoria = c => muestraClaves([c.k]);
+
+  // ---- Utilidades de dibujo ----
+
+  const regla = document.createElement("canvas").getContext("2d");
+  regla.font = "10.5px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+  const ancho = s => regla.measureText(s).width;
+  const SEN45 = Math.SQRT1_2;
+
+  function el(tipo, atributos, padre) {
+    const e = document.createElementNS(NS, tipo);
+    Object.entries(atributos).forEach(([k, v]) => e.setAttribute(k, v));
+    if (padre) padre.appendChild(e);
+    return e;
+  }
+
+  // Barra con esquinas superiores redondeadas, anclada a la línea base
+  function barra(x, y, w, h) {
+    const r = Math.max(0, Math.min(3, w / 2, h));
+    return "M" + x + "," + (y + h) + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y +
+           "H" + (x + w - r) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + r) + "V" + (y + h) + "Z";
+  }
+
+  const area = document.getElementById("area");
+  const desplazable = document.getElementById("desplazable");
+  const svg = document.getElementById("barras");
+  const ejeY = document.getElementById("eje-y");
+  const tip = document.getElementById("tip");
+  const ficha = document.getElementById("ficha");
+  const btnIzq = document.getElementById("ir-izq");
+  const btnDer = document.getElementById("ir-der");
+  let activa = null;
+  let geo = null;   // geometría del último dibujo (para la navegación)
+
+  // Municipios visibles: con población en el año y en al menos una muestra activa, de menor a mayor
+  function visibles() {
+    return props
+      .filter(p => conDato(p) && CATEGORIAS.some(c => c.activa && p[c.k] === 1))
+      .sort((a, b) => pob(a) - pob(b) || a.cod.localeCompare(b.cod));
+  }
+
+  // Dominio logarítmico en potencias de 10: igual para 2005 y 2013 (cambia solo con las muestras activas)
+  // y siempre incluye los puntos de corte (10k a 1M como mínimo)
+  function dominio() {
+    const valores = [];
+    props.forEach(p => {
+      if (!CATEGORIAS.some(c => c.activa && p[c.k] === 1)) return;
+      [p.p05, p.p13].forEach(v => { if (v) valores.push(v); });
+    });
+    if (!valores.length) return [1e4, 1e6];
+    const lo = Math.pow(10, Math.floor(Math.log10(Math.min(...valores))));
+    const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...valores))));
+    return [Math.min(lo, 1e4), Math.max(hi, 1e6)];
+  }
+
+  // ---- Ficha del municipio ----
+
+  function fichaMunicipio(p, puesto, n) {
+    const filas = CATEGORIAS.filter(c => p[c.k] === 1).map(c =>
+      '<div class="pop-cat">' + muestraCategoria(c) + '<span>' + (c.k === "pdet" ? "PDET" : c.largo) + '</span></div>').join("");
+    const pnis = p.pnis === "alta" ? "alta" : p.pnis === "baja" ? "baja" : "sin clasificación";
+    const p05 = p.p05 === null ? "sin dato (municipio creado en 2007)" : miles(p.p05);
+    return '<div class="pop-nombre">' + p.mpio + '</div>' +
+      '<div class="pop-dpto">' + p.dpto + ' · Código DANE ' + p.cod + '</div>' +
+      '<div class="pop-fila">Población 2005: ' + (anio === 2005 ? '<b>' + p05 + '</b>' : p05) + '</div>' +
+      '<div class="pop-fila">Población 2013: ' + (anio === 2013 ? '<b>' + miles(p.p13) + '</b>' : miles(p.p13)) + '</div>' +
+      '<div class="pop-fila">Puesto ' + puesto + ' de ' + n + ' en el gráfico (de menor a mayor, ' + anio + ')</div>' +
+      filas +
+      (p.sub ? '<div class="pop-suave">Subregión PDET: ' + p.sub + '</div>' : '') +
+      '<div class="pop-suave">Probabilidad PNIS: ' + pnis + '</div>';
+  }
+
+  function cerrarFicha() {
+    ficha.style.display = "none";
+    if (activa) activa.classList.remove("activa");
+    activa = null;
+  }
+
+  function abrirFicha(col, p, cx, yTope, puesto, n) {
+    cerrarFicha();
+    tip.style.display = "none";
+    activa = col;
+    col.classList.add("activa");
+    document.getElementById("ficha-contenido").innerHTML = fichaMunicipio(p, puesto, n);
+    ficha.style.display = "block";
+    const w = ficha.offsetWidth, h = ficha.offsetHeight;
+    const x = EJE + cx - desplazable.scrollLeft;
+    let top = yTope - h - 12;
+    if (top < 4) top = Math.min(yTope + 12, area.clientHeight - h - 4);
+    ficha.style.left = Math.min(Math.max(x - w / 2, EJE + 4), area.clientWidth - w - 4) + "px";
+    ficha.style.top = Math.max(4, top) + "px";
+  }
+
+  document.getElementById("ficha-cerrar").addEventListener("click", cerrarFicha);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") cerrarFicha(); });
+  svg.addEventListener("click", e => { if (!e.target.closest(".col")) cerrarFicha(); });
+
+  function moverTip(e) {
+    const r = area.getBoundingClientRect();
+    tip.style.left = Math.min(e.clientX - r.left + 12, area.clientWidth - tip.offsetWidth - 4) + "px";
+    tip.style.top = (e.clientY - r.top - 34) + "px";
+  }
+
+  // ---- Gráfico ----
+
+  // Paso "redondo" (1; 2; 2,5 o 5 × 10^k) para la escala lineal
+  function pasoRedondo(v) {
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= v);
+  }
+
+  // Construye barras, nombres y eventos; la posición vertical la fija escalar()
+  function dibujar(conservarDesplazamiento) {
+    cerrarFicha();
+    const izquierdaPrevia = desplazable.scrollLeft;
+    const lista = visibles();
+    const n = lista.length;
+
+    // Ancho: 50 municipios por ventana; con menos de 50, las barras se alinean a la derecha.
+    // Margen izquierdo para el nombre inclinado del primer municipio; con 50 o menos municipios
+    // todo cabe en la ventana sin desplazamiento
+    const vw = desplazable.clientWidth;
+    const mr = 14;
+    const ml = n ? Math.ceil(ancho(lista[0].mpio) * SEN45) + 8 : 6;
+    const paso = Math.max(12, (vw - mr - (n <= VENTANA ? ml : 0)) / VENTANA);
+    const W = Math.max(vw, Math.ceil(n * paso + mr + ml));
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", 10);
+    const H = Math.max(320, desplazable.clientHeight);   // sin la barra de desplazamiento horizontal
+    svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.textContent = "";
+
+    const largo = n ? Math.max(...lista.map(p => ancho(p.mpio))) : 40;
+    const mt = 58;
+    const mb = Math.ceil(largo * SEN45) + 20;
+    const base = H - mb, ph = base - mt;
+    const x0 = W - mr - n * paso;
+    const bw = Math.max(4, paso * 0.72);
+
+    const rejilla = el("g", { "aria-hidden": "true" }, svg);
+
+    // Barras: una columna por municipio (zona de clic de toda la altura)
+    const barras = lista.map((p, i) => {
+      const cx = x0 + paso * (i + 0.5);
+      const v = pob(p);
+      const { fill, borde } = aspecto(p);
+      const b = { v, cx, ins: borde ? 1 : 0, tope: base };
+      const col = el("g", { class: "col", tabindex: 0, role: "button",
+                            "aria-label": nombre(p) + ": " + miles(v) + " habitantes en " + anio }, svg);
+      el("rect", { class: "fondo", x: cx - paso / 2, y: 0, width: paso, height: H }, col);
+      // Con contorno, la barra se reduce 1 px por lado para que el trazo quede dentro de su ancho
+      b.path = el("path", { class: "barra", fill, stroke: borde ? borde.color : "none",
+                            "stroke-width": borde ? 2 : 0, "stroke-linejoin": "round" }, col);
+      b.valor = el("text", { class: "valor", "dominant-baseline": "middle" }, col);
+      b.valor.textContent = abreviar(v);
+      el("text", { class: "nombre", x: cx + 3, y: base + 12, "text-anchor": "end",
+                   transform: "rotate(-45 " + (cx + 3) + " " + (base + 12) + ")" }, col).textContent = p.mpio;
+
+      col.addEventListener("mouseenter", e => {
+        if (activa || arrastrado) return;
+        tip.textContent = nombre(p) + " · " + abreviar(v);
+        tip.style.display = "block";
+        moverTip(e);
+      });
+      col.addEventListener("mousemove", e => { if (!activa && !arrastrado) moverTip(e); });
+      col.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+      col.addEventListener("click", () => { if (!arrastrado) abrirFicha(col, p, cx, b.tope, i + 1, n); });
+      col.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirFicha(col, p, cx, b.tope, i + 1, n); }
+      });
+      return b;
+    });
+
+    // Punto de corte: línea roja discontinua sobre las barras (su altura la fija escalar())
+    const lineaCorte = el("line", { x1: 0, x2: W, stroke: "#D7191C", "stroke-width": 2,
+                                    "stroke-dasharray": "7 4", "pointer-events": "none" }, svg);
+
+    if (!n) {
+      el("text", { x: vw / 2, y: mt + ph / 2, "text-anchor": "middle", "font-size": 14, fill: "#555" }, svg)
+        .textContent = "Active al menos una muestra.";
+    }
+
+    geo = { n, paso, x0, W, H, mt, base, ph, bw, lista, barras, rejilla, lineaCorte, ultimo: n - 1 };
+    desplazable.scrollLeft = conservarDesplazamiento ? izquierdaPrevia : W;   // por defecto, extremo derecho
+    actualizarNavegacion();
+    escalar();
+    dibujarConteo(lista);
+  }
+
+  // Escala vertical: logarítmica fija (según las muestras activas) o lineal de 0 al municipio más
+  // poblado de la ventana visible (el de más a la derecha), que se recalcula al desplazar
+  function escalar() {
+    if (!geo) return;
+    const { n, W, H, mt, base, ph, bw, barras, rejilla, lineaCorte } = geo;
+    let y, marcas;
+    if (escala === "log") {
+      const [lo, hi] = dominio();
+      const L0 = Math.log10(lo), L1 = Math.log10(hi);
+      y = v => base - (Math.log10(v) - L0) / (L1 - L0) * ph;
+      marcas = [];
+      for (let d = Math.round(L0); d <= Math.round(L1); d++) {
+        [1, 2, 5].forEach(m => {
+          const v = m * Math.pow(10, d);
+          if (v >= lo && v <= hi) marcas.push({ v, principal: m === 1 });
+        });
+      }
+    } else {
+      const vmax = n ? pob(geo.lista[geo.ultimo]) : corte;
+      const s = pasoRedondo(vmax / 5);
+      const tope = Math.ceil(vmax * 1.02 / s) * s;
+      y = v => base - v / tope * ph;
+      marcas = [];
+      for (let v = 0; v <= tope + s / 2; v += s) marcas.push({ v, principal: v === 0 });
+    }
+    // Las barras a la derecha de la ventana pueden superar el máximo lineal: se recortan arriba
+    const yb = v => Math.max(6, y(v));
+
+    // Rejilla (en las barras) y etiquetas del eje (en el eje fijo)
+    rejilla.textContent = "";
+    ejeY.setAttribute("width", EJE);
+    ejeY.setAttribute("height", H);
+    ejeY.textContent = "";
+    el("rect", { x: 0, y: 0, width: EJE, height: H, fill: "#fff" }, ejeY);
+    const yCorte = y(corte);
+    const yPildora = Math.min(Math.max(yCorte, mt - 30), base);
+    marcas.forEach(({ v, principal }) => {
+      el("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: principal ? "#dcdcdc" : "#f0f0f0", "stroke-width": 1 }, rejilla);
+      if (Math.abs(y(v) - yPildora) < 13) return;   // se omite la etiqueta que choca con la del corte
+      el("text", { class: "eje", x: EJE - 8, y: y(v) + 4, "text-anchor": "end",
+                   "font-weight": principal ? 600 : 400 }, ejeY).textContent = etiquetaEje(v);
+    });
+    el("line", { x1: 0, x2: W, y1: base, y2: base, stroke: "#262626", "stroke-width": 1 }, rejilla);
+    el("line", { x1: EJE - 0.5, x2: EJE - 0.5, y1: mt - 6, y2: base, stroke: "#262626", "stroke-width": 1 }, ejeY);
+    el("text", { class: "eje", transform: "translate(14," + (mt + ph / 2) + ") rotate(-90)", "text-anchor": "middle" }, ejeY)
+      .textContent = "Población total " + anio + (escala === "log" ? " (escala logarítmica)" : " (escala lineal)");
+
+    // Barras y valores
+    barras.forEach(b => {
+      const tope = yb(b.v);
+      b.tope = tope;
+      b.path.setAttribute("d", barra(b.cx - bw / 2 + b.ins, tope + b.ins, bw - 2 * b.ins, Math.max(0, base - tope - b.ins)));
+      b.valor.setAttribute("x", b.cx);
+      b.valor.setAttribute("y", tope - 4);
+      b.valor.setAttribute("transform", "rotate(-90 " + b.cx + " " + (tope - 4) + ")");
+    });
+
+    // Punto de corte: si queda por encima del máximo lineal, la línea se oculta y la etiqueta sube con ↑
+    const fuera = yCorte < mt - 30;
+    lineaCorte.setAttribute("y1", yCorte);
+    lineaCorte.setAttribute("y2", yCorte);
+    lineaCorte.style.display = fuera ? "none" : "";
+    el("rect", { x: 22, y: yPildora - 9, width: EJE - 26, height: 18, rx: 3, fill: "#fff", stroke: "#D7191C", "stroke-width": 1.5 }, ejeY);
+    el("text", { x: 22 + (EJE - 26) / 2, y: yPildora + 4, "text-anchor": "middle", "font-size": 11, "font-weight": 700, fill: "#D7191C" }, ejeY)
+      .textContent = (fuera ? "↑ " : "") + abreviar(corte);
+  }
+
+  // ---- Navegación horizontal: rueda/trackpad, arrastre, flechas y teclado ----
+
+  function actualizarNavegacion() {
+    if (!geo) return;
+    const izq = desplazable.scrollLeft, der = izq + desplazable.clientWidth;
+    const max = desplazable.scrollWidth - desplazable.clientWidth;
+    btnIzq.disabled = izq <= 1;
+    btnDer.disabled = izq >= max - 1;
+    if (!geo.n) { document.getElementById("posicion").textContent = "Sin municipios"; return; }
+    const primero = Math.max(0, Math.ceil((izq - geo.x0) / geo.paso - 0.5));
+    const ultimo = Math.min(geo.n - 1, Math.floor((der - geo.x0) / geo.paso - 0.5));
+    geo.ultimo = Math.max(primero, ultimo);
+    document.getElementById("posicion").textContent =
+      "Municipios " + miles(primero + 1) + "–" + miles(ultimo + 1) + " de " + miles(geo.n);
+  }
+
+  let cuadro = null;
+  desplazable.addEventListener("scroll", () => {
+    actualizarNavegacion();
+    tip.style.display = "none";
+    if (activa) cerrarFicha();
+    // Escala lineal dinámica: un reescalado por cuadro de animación
+    if (escala === "lineal" && !cuadro) cuadro = requestAnimationFrame(() => { cuadro = null; escalar(); });
+  });
+
+  // Rueda vertical del ratón → desplazamiento horizontal (el trackpad horizontal funciona de forma nativa)
+  desplazable.addEventListener("wheel", e => {
+    if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    if (desplazable.scrollWidth <= desplazable.clientWidth) return;
+    desplazable.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 32 : 1);
+    e.preventDefault();
+  }, { passive: false });
+
+  // Arrastrar con el ratón; un arrastre de más de 4 px no abre la ficha
+  let arrastre = null, arrastrado = false;
+  desplazable.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    arrastre = { x: e.clientX, izq: desplazable.scrollLeft };
+    arrastrado = false;
+  });
+  window.addEventListener("pointermove", e => {
+    if (!arrastre) return;
+    const dx = e.clientX - arrastre.x;
+    if (!arrastrado && Math.abs(dx) > 4) {
+      arrastrado = true;
+      desplazable.classList.add("arrastrando");
+      tip.style.display = "none";
+    }
+    if (arrastrado) desplazable.scrollLeft = arrastre.izq - dx;
+  });
+  window.addEventListener("pointerup", () => {
+    if (!arrastre) return;
+    arrastre = null;
+    desplazable.classList.remove("arrastrando");
+    setTimeout(() => { arrastrado = false; }, 0);   // después del clic que sigue al arrastre
+  });
+
+  // Flechas: media ventana (25 municipios) por clic
+  const desplazar = s => desplazable.scrollBy({ left: s * (geo ? geo.paso : 20) * VENTANA / 2, behavior: "smooth" });
+  btnIzq.addEventListener("click", () => desplazar(-1));
+  btnDer.addEventListener("click", () => desplazar(1));
+  desplazable.addEventListener("keydown", e => {
+    if (e.target !== desplazable) return;
+    if (e.key === "ArrowLeft") { desplazar(-1); e.preventDefault(); }
+    if (e.key === "ArrowRight") { desplazar(1); e.preventDefault(); }
+  });
+
+  // ---- Caja de conteo: superposiciones por pares, combinaciones y totales por muestra ----
+
+  function dibujarConteo(lista) {
+    const activas = CATEGORIAS.filter(c => c.activa);
+    const sobre = p => pob(p) > corte;
+    const fila = (clase, sw, texto, ps) => '<tr class="' + clase + '"><td class="sw">' + sw + '</td><td>' + texto +
+      '</td><td class="n">' + miles(ps.length) + '</td><td class="n">' + miles(ps.filter(sobre).length) + '</td></tr>';
+
+    let html = '<table><thead><tr><th></th><th></th><th>Total</th><th>&gt; ' + abreviar(corte) + ' en ' + anio +
+      '</th></tr></thead><tbody>';
+
+    if (!lista.length) {
+      html += '<tr><td colspan="4" class="vacio">Ninguna muestra activa.</td></tr>';
+    } else {
+      // Superposiciones: una fila por cada par de muestras activas (n activas → n(n−1)/2 filas),
+      // con los municipios que pertenecen a ambas (pueden pertenecer además a otras)
+      if (activas.length > 1) {
+        html += '<tr><td colspan="4" class="subtitulo-tabla" style="padding-top:0">Superposiciones (pares de muestras activas)</td></tr>';
+      }
+      for (let i = 0; i < activas.length; i++) {
+        for (let j = i + 1; j < activas.length; j++) {
+          const a = activas[i], b = activas[j];
+          const ps = lista.filter(p => p[a.k] === 1 && p[b.k] === 1);
+          html += fila("superposicion" + (ps.length ? "" : " vacia"), muestraClaves([a.k, b.k]),
+                       a.corto + " ∩ " + b.corto, ps);
+        }
+      }
+      html += '<tr><td colspan="4" class="subtitulo-tabla"' + (activas.length > 1 ? '' : ' style="padding-top:0"') +
+        '>Combinaciones en el gráfico</td></tr>';
+
+      // Combinaciones exactas de muestras activas: cada municipio cuenta una sola vez
+      const grupos = new Map();
+      lista.forEach(p => {
+        const id = activas.filter(c => p[c.k] === 1).map(c => c.k).join("+");
+        if (!grupos.has(id)) grupos.set(id, []);
+        grupos.get(id).push(p);
+      });
+      [...grupos.entries()]
+        .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+        .forEach(([id, ps]) => {
+          const claves = id.split("+");
+          const texto = claves.length === 1 ? POR_CLAVE[claves[0]].corto + " únicamente"
+                                            : claves.map(k => POR_CLAVE[k].corto).join(" + ");
+          html += fila("", muestraClaves(claves), texto, ps);
+        });
+      html += fila("total", "", "Municipios en el gráfico", lista);
+    }
+
+    html += '<tr><td colspan="4" class="subtitulo-tabla">Por muestra (con población en ' + anio + ')</td></tr>';
+    CATEGORIAS.forEach(c => {
+      html += fila(c.activa ? "" : "apagada", muestraCategoria(c), c.corto,
+                   props.filter(p => p[c.k] === 1 && conDato(p)));
+    });
+    html += "</tbody></table>";
+    document.getElementById("conteo").innerHTML = html;
+  }
+
+  const caja = document.getElementById("caja-conteo");
+  const plegar = document.getElementById("plegar");
+  plegar.addEventListener("click", () => {
+    const plegada = caja.classList.toggle("plegada");
+    plegar.textContent = plegada ? "+" : "−";
+    plegar.setAttribute("aria-expanded", !plegada);
+    plegar.setAttribute("aria-label", (plegada ? "Desplegar" : "Plegar") + " la caja de conteo");
+  });
+
+  // Mover la caja arrastrando su título, sin salir del área del gráfico
+  let movimiento = null;
+  caja.querySelector(".cabeza").addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    movimiento = { x: e.clientX - caja.offsetLeft, y: e.clientY - caja.offsetTop };
+    e.preventDefault();
+  });
+  window.addEventListener("pointermove", e => {
+    if (!movimiento) return;
+    const maxX = area.clientWidth - caja.offsetWidth - 4, maxY = area.clientHeight - 30;
+    caja.style.left = Math.min(Math.max(4, e.clientX - movimiento.x), Math.max(4, maxX)) + "px";
+    caja.style.top = Math.min(Math.max(4, e.clientY - movimiento.y), maxY) + "px";
+  });
+  window.addEventListener("pointerup", () => { movimiento = null; });
+
+  // ---- Panel: año, punto de corte y muestras ----
+
+  function botones(contenedor, opciones, texto, accion) {
+    return opciones.map(o => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = texto(o);
+      b.addEventListener("click", () => accion(o));
+      contenedor.appendChild(b);
+      return [o, b];
+    });
+  }
+
+  const botonesAnio = botones(document.getElementById("sel-anio"), ANIOS, String,
+                              a => { anio = a; actualizar(false); });
+  const ESCALAS = [{ id: "log", texto: "Logarítmica" }, { id: "lineal", texto: "Lineal" }];
+  const botonesEscala = botones(document.getElementById("sel-escala"), ESCALAS, e => e.texto,
+                                e => { escala = e.id; actualizarEscala(); });
+  function actualizarEscala() {
+    botonesEscala.forEach(([e, b]) => b.setAttribute("aria-pressed", e.id === escala));
+    document.getElementById("encabezado-texto").innerHTML =
+      "<b>Población total en " + anio + "</b> · Punto de corte: <b>" + abreviar(corte) + "</b>" +
+      "<br>Municipios ordenados de menor (izquierda) a mayor (derecha) población · " +
+      (escala === "log" ? "escala logarítmica" : "escala lineal hasta el municipio más poblado a la vista");
+    cerrarFicha();
+    escalar();
+  }
+
+  const botonesCorte = botones(document.getElementById("sel-corte"), CORTES, abreviar,
+                               c => { corte = c; actualizar(true); });
+
+  const capas = document.getElementById("capas");
+  CATEGORIAS.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.k = c.k;
+    b.innerHTML = '<span class="interruptor" aria-hidden="true"></span>' + muestraCategoria(c) + '<span class="texto"></span>';
+    b.addEventListener("click", () => { c.activa = !c.activa; actualizar(false); });
+    capas.appendChild(b);
+  });
+
+  function actualizar(conservarDesplazamiento) {
+    botonesAnio.forEach(([a, b]) => b.setAttribute("aria-pressed", a === anio));
+    botonesCorte.forEach(([c, b]) => b.setAttribute("aria-pressed", c === corte));
+    const nPdet = props.filter(p => p.pdet === 1 && conDato(p)).length;
+    capas.querySelectorAll("button").forEach(b => {
+      const c = POR_CLAVE[b.dataset.k];
+      b.setAttribute("aria-pressed", c.activa);
+      b.querySelector(".texto").textContent = c.k === "pdet" ? "PDET* (" + nPdet + "/" + DATOS.total_pdet + ")" : c.largo;
+    });
+    dibujar(conservarDesplazamiento);
+    actualizarEscala();
+  }
+
+  let espera;
+  window.addEventListener("resize", () => { clearTimeout(espera); espera = setTimeout(() => dibujar(false), 120); });
+
+  actualizar(false);
+</script>
+</body>
+</html>
