@@ -4,7 +4,7 @@
 #   - 170 municipios PDET (ART, datos.gov.co idrk-ba8y)
 #   - PNIS alta (109) y baja (983) probabilidad (d_pr_pnis.xls, sección 3)
 #   - 31 capitales departamentales continentales (código DANE xx001, sin Agua de Dios; Bogotá incluida),
-#     marcadas con una estrella en su cabecera municipal (MGN_CLASE, clase 1)
+#     marcadas con un contorno rojo grueso
 # Todo se refiere a Colombia continental: se excluye el Archipiélago de San Andrés, Providencia y Santa
 # Catalina (88001, 88564), que no es PDET ni tiene clasificación PNIS. Quedan 1.119 municipios.
 # Las categorías se superponen: el HTML las muestra con interruptores y, cuando un municipio pertenece
@@ -24,7 +24,6 @@ salida    <- file.path(raiz, "Análisis geográfico y mapas/objetos html/mapa_in
 
 shp_mpios <- file.path(fuentes, "MGN_2021_COLOMBIA/ADMINISTRATIVO/MGN_MPIO_POLITICO.shp")
 shp_dptos <- file.path(fuentes, "MGN_2021_COLOMBIA/ADMINISTRATIVO/MGN_DPTO_POLITICO.shp")
-shp_clase <- file.path(fuentes, "MGN_2021_COLOMBIA/MGN/MGN_CLASE.shp")
 dta_cede  <- file.path(raiz, "STATA/data/raw/panel_cede.dta")
 xlsx_eucl <- file.path(raiz, "STATA/data/raw/distancias_euclidianas_ciudades_intermedias.xlsx")
 xls_pnis  <- file.path(raiz, "STATA/data/raw/d_pr_pnis.xls")
@@ -86,13 +85,6 @@ cede <- cede[cede$ano == 2013, ]
 pobl_2013 <- setNames(as.integer(cede$pobl_tot), cod5(cede$codmpio))[capitales]
 stopifnot(!anyNA(pobl_2013))
 
-# Ubicación de la estrella: punto interior de la cabecera municipal (clase 1) de cada capital
-clase <- st_read(shp_clase, quiet = TRUE)
-cabeceras <- clase[clase$CLAS_CCDGO == "1" & clase$MPIO_CDPMP %in% capitales, ]
-stopifnot(nrow(cabeceras) == 31, setequal(cabeceras$MPIO_CDPMP, capitales))
-xy_cap <- st_coordinates(st_transform(st_point_on_surface(st_geometry(cabeceras)), 4326))
-rownames(xy_cap) <- cabeceras$MPIO_CDPMP
-
 # ---- 1. Simplificación topológica de fronteras (como en mapa_interactivo_d2.R) ----
 
 bordes <- st_line_merge(st_union(st_boundary(st_geometry(mpios))))
@@ -130,10 +122,7 @@ p$pdet <- as.integer(cods %in% pdet$cod)
 p$alta <- as.integer(cods %in% pnis_alta)
 p$baja <- as.integer(cods %in% pnis_baja)
 p$sub  <- pdet$NombreSubregion[match(cods, pdet$cod)]
-# Capitales: ubicación de la estrella (cabecera) y población 2013
-k <- match(cods, rownames(xy_cap))
-p$kx   <- round(xy_cap[k, "X"], 5)
-p$ky   <- round(xy_cap[k, "Y"], 5)
+# Población 2013 de las capitales (missing para los demás municipios)
 p$pob  <- unname(pobl_2013[match(cods, names(pobl_2013))])
 
 conteos <- c(m37 = sum(p$m37), exc = sum(p$exc), cap = sum(p$cap), pdet = sum(p$pdet),

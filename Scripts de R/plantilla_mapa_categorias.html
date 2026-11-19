@@ -101,10 +101,6 @@
   .pop-cat { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
   .pop-fila { margin-top: 6px; color: var(--texto-suave); }
   .leaflet-tooltip { font-size: 12.5px; font-weight: 600; }
-  /* Estrella de capital departamental: no intercepta el mouse (el clic llega al municipio) */
-  .estrella-capital { pointer-events: none; }
-  .estrella-capital svg { display: block; overflow: visible; }
-
   /* Aviso de alcance geográfico */
   #alcance {
     margin: 10px 0 0; padding: 7px 10px; font-size: 12.5px; line-height: 1.4;
@@ -150,8 +146,8 @@
       <span>Contorno negro: intermedia excluida (Tumaco, Uribia)</span>
     </div>
     <div class="leyenda-item">
-      <svg width="22" height="14" viewBox="-11 -7 22 14" aria-hidden="true"><path d="M0,-6.5 L1.7,-2.1 L6.2,-2 L2.7,0.8 L3.8,5.3 L0,2.8 L-3.8,5.3 L-2.7,0.8 L-6.2,-2 L-1.7,-2.1 Z" fill="#111" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" paint-order="stroke"/></svg>
-      <span>Estrella: capital departamental (en su cabecera)</span>
+      <svg width="22" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="19" height="11" fill="none" stroke="#E00000" stroke-width="3"/></svg>
+      <span>Contorno rojo: capital departamental</span>
     </div>
     <div class="leyenda-item">
       <svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="#000" stroke-width="1.6"/></svg>
@@ -166,7 +162,7 @@
   <div class="seccion nota">
     <p>Pase el cursor sobre un municipio coloreado para ver su nombre y haga clic para ver su ficha. Acerque o aleje con la rueda del ratón o los botones + / −, y arrastre para desplazarse.</p>
     <p>Alcance: Colombia continental. Se excluye el Archipiélago de San Andrés, Providencia y Santa Catalina (San Andrés, 88001, y Providencia, 88564), que no es PDET ni tiene clasificación PNIS; por eso las capitales son 31 (30 departamentos continentales y Bogotá, también capital de Cundinamarca).</p>
-    <p>Fuentes: MGN 2021 (DANE). Muestra de 37 ciudades intermedias: <code>tratados_distancia_euclidiana.dta</code> (Master.do, sección 4.1); las 2 excluidas son las del universo de 39 que son PNIS alta probabilidad (sección 12). Capitales departamentales: código DANE terminado en 001, sin Agua de Dios (sección 12.1); población 2013 del panel CEDE; la estrella se ubica en la cabecera municipal (MGN, clase 1). PNIS alta y baja probabilidad: <code>d_pr_pnis.xls</code> (sección 3; los 27 municipios continentales sin clasificación están en la muestra de 37). PDET: Agencia de Renovación del Territorio, datos.gov.co (<code>idrk-ba8y</code>), Decreto 893 de 2017.</p>
+    <p>Fuentes: MGN 2021 (DANE). Muestra de 37 ciudades intermedias: <code>tratados_distancia_euclidiana.dta</code> (Master.do, sección 4.1); las 2 excluidas son las del universo de 39 que son PNIS alta probabilidad (sección 12). Capitales departamentales: código DANE terminado en 001, sin Agua de Dios (sección 12.1); población 2013 del panel CEDE. PNIS alta y baja probabilidad: <code>d_pr_pnis.xls</code> (sección 3; los 27 municipios continentales sin clasificación están en la muestra de 37). PDET: Agencia de Renovación del Territorio, datos.gov.co (<code>idrk-ba8y</code>), Decreto 893 de 2017.</p>
     <p>Fronteras simplificadas (/*__TOLERANCIA__*/ m) para aligerar el archivo.</p>
   </div>
 </aside>
@@ -202,11 +198,11 @@
   const DATOS = /*__DATOS__*/;
 
   // Categorías en orden fijo: el orden de las franjas y de la leyenda no cambia al activar o desactivar.
-  // relleno: false = se dibuja como contorno (intermedias excluidas) o estrella (capitales)
+  // relleno: false = se dibuja como contorno grueso de su color (negro: excluidas; rojo: capitales)
   const CATEGORIAS = [
     { k: "m37",  corto: "Muestra 37",  largo: "Muestra original: 37 ciudades intermedias", color: "#2a78d6", relleno: true,  activa: true },
     { k: "exc",  corto: "Excluida",    largo: "Intermedias excluidas por PNIS alta prob. (Tumaco, Uribia)", color: "#111111", relleno: false, activa: true },
-    { k: "cap",  corto: "Capital",     largo: "Capitales departamentales", color: "#111111", relleno: false, activa: true },
+    { k: "cap",  corto: "Capital",     largo: "Capitales departamentales", color: "#E00000", relleno: false, activa: true },
     { k: "pdet", corto: "PDET",        largo: "Municipios PDET", color: "#1baf7a", relleno: true,  activa: true },
     { k: "alta", corto: "PNIS alta",   largo: "PNIS alta probabilidad", color: "#eb6834", relleno: true,  activa: true },
     { k: "baja", corto: "PNIS baja",   largo: "PNIS baja probabilidad", color: "#c9c8c2", relleno: true,  activa: false }
@@ -255,24 +251,23 @@
     return "url(#" + idPatron(cats.map(c => c.k)) + ")";
   }
 
-  // Estrella de capital (centrada en 0,0; radio exterior 6.5) con halo blanco
-  const ESTRELLA = '<path d="M0,-6.5 L1.7,-2.1 L6.2,-2 L2.7,0.8 L3.8,5.3 L0,2.8 L-3.8,5.3 L-2.7,0.8 L-6.2,-2 L-1.7,-2.1 Z" ' +
-                   'fill="#111" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" paint-order="stroke"/>';
-
-  // Muestra de color (SVG) para la leyenda: sólido, franjas, contorno y/o estrella
-  function muestraColor(clavesRelleno, contorno, estrella, ancho = 22, alto = 14) {
+  // Muestra de color (SVG) para la leyenda: relleno sólido o con franjas y contorno grueso opcional
+  function muestraColor(clavesRelleno, colorContorno, ancho = 22, alto = 14) {
     let fill = "none";
     if (clavesRelleno.length === 1) fill = POR_CLAVE[clavesRelleno[0]].color;
     else if (clavesRelleno.length > 1) fill = "url(#" + idPatron(clavesRelleno) + ")";
-    const borde = contorno
-      ? '<rect x="1.5" y="1.5" width="' + (ancho - 3) + '" height="' + (alto - 3) + '" fill="none" stroke="#111" stroke-width="3"/>'
-      : (fill === "none" && !estrella ? '<rect x="0.5" y="0.5" width="' + (ancho - 1) + '" height="' + (alto - 1) + '" fill="none" stroke="#bdbdbd"/>' : "");
-    const simbolo = estrella ? '<g transform="translate(' + ancho / 2 + ',' + alto / 2 + ')">' + ESTRELLA + '</g>' : "";
+    const borde = colorContorno
+      ? '<rect x="1.5" y="1.5" width="' + (ancho - 3) + '" height="' + (alto - 3) + '" fill="none" stroke="' + colorContorno + '" stroke-width="3"/>'
+      : (fill === "none" ? '<rect x="0.5" y="0.5" width="' + (ancho - 1) + '" height="' + (alto - 1) + '" fill="none" stroke="#bdbdbd"/>' : "");
     return '<svg class="muestra-color" width="' + ancho + '" height="' + alto + '" aria-hidden="true">' +
-      '<rect width="' + ancho + '" height="' + alto + '" fill="' + fill + '"/>' + borde + simbolo + '</svg>';
+      '<rect width="' + ancho + '" height="' + alto + '" fill="' + fill + '"/>' + borde + '</svg>';
   }
-  const muestraCategoria = c => c.relleno ? muestraColor([c.k], false, false)
-                                          : muestraColor([], c.k === "exc", c.k === "cap");
+  // Color del contorno de un conjunto de claves (las excluidas y las capitales no se superponen)
+  const contornoDe = claves => {
+    const c = CATEGORIAS.find(c => !c.relleno && claves.includes(c.k));
+    return c ? c.color : null;
+  };
+  const muestraCategoria = c => c.relleno ? muestraColor([c.k], null) : muestraColor([], c.color);
 
   // ---- Mapa: solo zoom y desplazamiento ----
 
@@ -285,10 +280,10 @@
   mapa.setMinZoom(mapa.getZoom() - 1);
   L.control.scale({ metric: true, imperial: false, position: "bottomleft" }).addTo(mapa);
 
-  [["rellenos", 410], ["fronteras", 420], ["dptos", 425], ["excluidas", 430], ["capitales", 440]].forEach(([n, z]) => {
+  [["rellenos", 410], ["fronteras", 420], ["dptos", 425], ["contornos", 430]].forEach(([n, z]) => {
     mapa.createPane(n).style.zIndex = z;
   });
-  ["fronteras", "dptos", "excluidas", "capitales"].forEach(n => { mapa.getPane(n).style.pointerEvents = "none"; });
+  ["fronteras", "dptos", "contornos"].forEach(n => { mapa.getPane(n).style.pointerEvents = "none"; });
 
   // ---- Rellenos interactivos de los municipios con alguna categoría ----
 
@@ -307,9 +302,12 @@
       '<div class="pop-fila">Probabilidad PNIS: ' + pnis + '</div>';
   }
 
+  // Un municipio con alguna categoría visible es interactivo. Si solo tiene contornos visibles
+  // (p. ej. Yopal: solo capital), recibe un relleno transparente para captar el cursor y el clic.
   const estilo = p => {
     const f = relleno(p);
-    return { stroke: false, fill: f !== null, fillColor: f || "#fff", fillOpacity: 1 };
+    const visible = CATEGORIAS.some(c => c.activa && p[c.k] === 1);
+    return { stroke: false, fill: visible, fillColor: f || "#fff", fillOpacity: f ? 1 : 0 };
   };
 
   const capaMpios = L.geoJSON(DATOS.mpios, {
@@ -340,27 +338,17 @@
     style: { color: "#000", weight: 1.4, opacity: 0.9 }
   }).addTo(mapa);
 
-  // ---- Contorno de las intermedias excluidas ----
+  // ---- Contornos gruesos: intermedias excluidas (negro) y capitales departamentales (rojo) ----
 
-  const capaExcluidas = L.geoJSON(
-    { type: "FeatureCollection", features: DATOS.mpios.features.filter(f => f.properties.exc === 1) },
+  const svgContornos = L.svg({ pane: "contornos" });
+  const capaContorno = c => L.geoJSON(
+    { type: "FeatureCollection", features: DATOS.mpios.features.filter(f => f.properties[c.k] === 1) },
     {
-      pane: "excluidas", interactive: false,
-      renderer: L.svg({ pane: "excluidas" }),
-      style: { stroke: true, fill: false, color: "#111", weight: 3.5, opacity: 1, lineJoin: "round" }
+      pane: "contornos", interactive: false, renderer: svgContornos,
+      style: { stroke: true, fill: false, color: c.color, weight: 3.5, opacity: 1, lineJoin: "round" }
     }
-  ).addTo(mapa);
-
-  // ---- Estrellas de las capitales departamentales (en la cabecera municipal) ----
-
-  const iconoCapital = L.divIcon({
-    className: "estrella-capital", iconSize: [20, 20], iconAnchor: [10, 10],
-    html: '<svg width="20" height="20" viewBox="-10 -10 20 20" aria-hidden="true"><g transform="scale(1.35)">' + ESTRELLA + '</g></svg>'
-  });
-  const capaCapitales = L.layerGroup(
-    DATOS.mpios.features.filter(f => f.properties.cap === 1).map(f =>
-      L.marker([f.properties.ky, f.properties.kx], { icon: iconoCapital, pane: "capitales", interactive: false, keyboard: false }))
-  ).addTo(mapa);
+  );
+  const CONTORNOS = Object.fromEntries(CATEGORIAS.filter(c => !c.relleno).map(c => [c.k, capaContorno(c)]));
 
   // ---- Panel: interruptores ----
 
@@ -404,7 +392,7 @@
     } else {
       filas.forEach(([id, n]) => {
         const claves = id.split("+");
-        const sw = muestraColor(claves.filter(k => POR_CLAVE[k].relleno), claves.includes("exc"), claves.includes("cap"));
+        const sw = muestraColor(claves.filter(k => POR_CLAVE[k].relleno), contornoDe(claves));
         const texto = claves.length === 1 ? POR_CLAVE[claves[0]].corto + " únicamente" : claves.map(k => POR_CLAVE[k].corto).join(" + ");
         html += '<tr><td class="sw">' + sw + '</td><td>' + texto + '</td><td class="n">' + miles(n) + '</td></tr>';
       });
@@ -418,8 +406,9 @@
     mapa.closePopup();
     capas.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", POR_CLAVE[b.dataset.k].activa));
     capaMpios.setStyle(f => estilo(f.properties));
-    if (POR_CLAVE.exc.activa) capaExcluidas.addTo(mapa); else capaExcluidas.remove();
-    if (POR_CLAVE.cap.activa) capaCapitales.addTo(mapa); else capaCapitales.remove();
+    Object.entries(CONTORNOS).forEach(([k, capa]) => {
+      if (POR_CLAVE[k].activa) capa.addTo(mapa); else capa.remove();
+    });
     dibujarConteo();
   }
 
