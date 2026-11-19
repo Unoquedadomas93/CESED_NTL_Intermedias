@@ -141,7 +141,7 @@
 
   /* Caja de conteo flotante (como en el mapa): arriba a la izquierda, donde están las barras más bajas */
   #caja-conteo {
-    position: absolute; left: 84px; top: 54px; z-index: 4;   /* debajo de la etiqueta del punto de corte */
+    position: absolute; left: 84px; top: 46px; z-index: 4;   /* debajo de la etiqueta del punto de corte */
     width: 390px; max-width: calc(100% - 100px); max-height: calc(100% - 20px); overflow-y: auto;
     background: rgba(255, 255, 255, .96); border: 1px solid #bdbdbd; border-radius: 4px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, .15); padding: 8px 11px;
@@ -496,8 +496,15 @@
     // todo cabe en la ventana sin desplazamiento
     const vw = desplazable.clientWidth;
     const mr = 14;
-    const ml = n ? Math.ceil(ancho(lista[0].mpio) * SEN45) + 8 : 6;
-    const paso = Math.max(12, (vw - mr - (n <= VENTANA ? ml : 0)) / Math.min(Math.max(n, 1), VENTANA));
+    // Con 50 o menos municipios (sin desplazamiento), los nombres de las primeras barras se prolongan
+    // sobre la franja del eje (se copian allí en escalar()), así que solo se reserva lo que no cabe en ella
+    const sinDesplazamiento = n <= VENTANA;
+    const desborde = n ? Math.ceil(ancho(lista[0].mpio) * SEN45) + 8 : 6;
+    // (el nombre parte de cx + 3, con cx = ml + paso/2; el margen solo cubre lo que excede la franja del eje)
+    const ml = sinDesplazamiento
+      ? Math.max(0, desborde - 8 - (vw - mr) / Math.max(n, 1) / 2 - 3 - EJE + 16)
+      : desborde;
+    const paso = Math.max(12, (vw - mr - (sinDesplazamiento ? ml : 0)) / Math.min(Math.max(n, 1), VENTANA));
     const W = Math.max(vw, Math.ceil(n * paso + mr + ml));
     svg.setAttribute("width", W);
     svg.setAttribute("height", 10);
@@ -507,7 +514,7 @@
     svg.textContent = "";
 
     const largo = n ? Math.max(...lista.map(p => ancho(p.mpio))) : 40;
-    const mt = 72;
+    const mt = 64;
     const mb = Math.ceil(largo * SEN45) + 20;
     const base = H - mb, ph = base - mt;
     const x0 = W - mr - n * paso;
@@ -551,28 +558,29 @@
     if (n) {
       const k = lista.filter(p => pob(p) <= corte).length;
       const xc = x0 + paso * k;
-      // Etiquetas: el número crece con el ancho de las barras (26–40 px) y cada flecha con el número
-      // de municipios de su lado (28–170 px)
-      const fs = Math.max(26, Math.min(40, paso * 1.5));
-      const yt = Math.round(fs + 2);                  // línea base del texto
-      const ya = yt - fs * 0.33;                      // altura de las flechas (centro del número)
+      // Etiquetas: conteo y flechas en azul oscuro, "≤ / > corte" en rojo, todo del mismo tamaño
+      // (16–24 px según el ancho de las barras); cada flecha crece con los municipios de su lado (28–170 px)
+      const fs = Math.max(16, Math.min(24, Math.round(paso * 0.9)));
+      const AZUL = "#0b2e6b";
+      const yt = Math.round(fs + 4);                  // línea base del texto
+      const ya = yt - fs * 0.35;                      // altura de las flechas (centro del texto)
       const largoFlecha = c => Math.max(28, Math.min(170, paso * c * 0.5));
       const g = el("g", { "pointer-events": "none" }, svg);
       el("line", { x1: xc, x2: xc, y1: yt + 6, y2: base + 4, stroke: "#D7191C", "stroke-width": 3,
                    "stroke-dasharray": "8 5" }, g);
       const fondo = el("rect", { fill: "#fff", "fill-opacity": .9, rx: 3 }, g);
-      // Número grande seguido de "≤ corte" / "> corte" en tamaño menor
+      // Conteo (azul) seguido de "≤ corte" / "> corte" (rojo)
       const etiqueta = (x, ancla, num, resto) => {
-        const t = el("text", { x, y: yt, "text-anchor": ancla, "font-weight": 700, fill: "#D7191C" }, g);
-        el("tspan", { "font-size": fs }, t).textContent = num;
-        el("tspan", { "font-size": Math.round(fs * 0.6) }, t).textContent = resto;
+        const t = el("text", { x, y: yt, "text-anchor": ancla, "font-weight": 700, "font-size": fs }, g);
+        el("tspan", { fill: AZUL }, t).textContent = num;
+        el("tspan", { fill: "#D7191C" }, t).textContent = resto;
         return t;
       };
       const flecha = (x1, dir, L) => {
-        const x2 = x1 + dir * L, h = Math.max(8, fs * 0.45);
-        el("line", { x1, x2: x2 - dir * h * 0.8, y1: ya, y2: ya, stroke: "#D7191C", "stroke-width": Math.max(3, fs / 7) }, g);
-        el("path", { d: "M" + x2 + " " + ya + "L" + (x2 - dir * h) + " " + (ya - h * 0.6) + "L" + (x2 - dir * h) + " " + (ya + h * 0.6) + "Z",
-                     fill: "#D7191C" }, g);
+        const x2 = x1 + dir * L, h = Math.max(7, fs * 0.5);
+        el("line", { x1, x2: x2 - dir * h * 0.8, y1: ya, y2: ya, stroke: AZUL, "stroke-width": Math.max(2, fs / 8) }, g);
+        el("path", { d: "M" + x2 + " " + ya + "L" + (x2 - dir * h) + " " + (ya - h * 0.55) + "L" + (x2 - dir * h) + " " + (ya + h * 0.55) + "Z",
+                     fill: AZUL }, g);
       };
       const izq = etiqueta(xc - 8, "end", miles(k), " ≤ " + abreviar(corte));
       const der = etiqueta(xc + 8, "start", miles(n - k), " > " + abreviar(corte));
@@ -590,7 +598,12 @@
         .textContent = "Active al menos una muestra.";
     }
 
-    geo = { n, paso, x0, W, H, mt, base, ph, bw, lista, barras, rejilla, ultimo: n - 1 };
+    // Nombres que se salen por la izquierda: se repiten en la franja del eje
+    const desbordados = sinDesplazamiento
+      ? lista.map((p, i) => ({ mpio: p.mpio, cx: x0 + paso * (i + 0.5) }))
+             .filter(d => d.cx + 3 - ancho(d.mpio) * SEN45 < 0)
+      : [];
+    geo = { n, paso, x0, W, H, mt, base, ph, bw, lista, barras, rejilla, desbordados, ultimo: n - 1 };
     desplazable.scrollLeft = conservarDesplazamiento ? izquierdaPrevia : W;   // por defecto, extremo derecho
     actualizarNavegacion();
     escalar();
@@ -638,6 +651,11 @@
     });
     el("line", { x1: 0, x2: W, y1: base, y2: base, stroke: "#262626", "stroke-width": 1 }, rejilla);
     el("line", { x1: EJE - 0.5, x2: EJE - 0.5, y1: mt - 6, y2: base, stroke: "#262626", "stroke-width": 1 }, ejeY);
+    geo.desbordados.forEach(({ mpio, cx }) => {
+      const x = EJE + cx + 3;
+      el("text", { class: "nombre", x, y: base + 12, "text-anchor": "end",
+                   transform: "rotate(-45 " + x + " " + (base + 12) + ")" }, ejeY).textContent = mpio;
+    });
     el("text", { class: "eje", transform: "translate(14," + (mt + ph / 2) + ") rotate(-90)", "text-anchor": "middle" }, ejeY)
       .textContent = "Población total " + anio + (escala === "log" ? " (escala logarítmica)" : " (escala lineal)");
 
