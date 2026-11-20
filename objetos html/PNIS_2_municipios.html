@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<!-- Plantilla de gráfico de líneas interactivo, adaptada de Análisis_geográfico/Scripts de R/plantilla_grafico_barras.html
+     (mismo panel, interruptores, botones y tipografía). La PARTE 6 (sección 6.4) de STATA_ESP reemplaza las marcas
+     /*__...__*/ por el título, la configuración (CONFIG) y los datos (DATOS) con Mata. No hace falta editar
+     este archivo: títulos, componentes, colores y notas se definen en parte_6.do. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Familias atendidas por el PNIS: Puerto Guzmán y Vistahermosa</title>
+<style>
+  :root {
+    --texto: #1a1a1a;
+    --texto-suave: #555;
+    --borde: #d4d4d4;
+    --panel: #f6f6f6;
+    --acento: #1a1a1a;
+    --rejilla: #ececec;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #fff; color: var(--texto);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; }
+
+  /* Panel izquierdo fijo: título, selectores, convenciones y notas */
+  #panel {
+    width: 340px; flex: none; height: 100%; overflow-y: auto;
+    padding: 22px 20px 18px; background: var(--panel); border-right: 1px solid var(--borde);
+  }
+  h1 { font-size: 19px; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+  #subtitulo { font-size: 13px; line-height: 1.45; color: var(--texto-suave); margin: 0; }
+  #alcance {
+    margin: 10px 0 0; padding: 7px 10px; font-size: 12.5px; line-height: 1.4;
+    background: #fff; border-left: 3px solid var(--acento);
+  }
+  #alcance:empty { display: none; }
+  .seccion { margin-top: 18px; }
+  .etiqueta-fila { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+  .etiqueta {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--texto-suave);
+  }
+  .atajos { display: flex; gap: 4px; }
+  .atajos button {
+    font: inherit; font-size: 11.5px; padding: 2px 7px; cursor: pointer; color: var(--texto-suave);
+    background: none; border: 1px solid transparent; border-radius: 3px;
+  }
+  .atajos button:hover { color: var(--texto); border-color: #bdbdbd; background: #fff; }
+  .atajos button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+  /* Botones de opción (años): cada uno se activa o desactiva */
+  .botones { display: grid; grid-template-columns: repeat(var(--columnas, 4), 1fr); gap: 6px; }
+  .botones button {
+    font: inherit; font-size: 13px; padding: 8px 4px; cursor: pointer; color: var(--texto);
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px; line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+  }
+  .botones button:hover { border-color: var(--acento); }
+  .botones button[aria-pressed="true"] {
+    background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600;
+  }
+  .botones button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+  /* Interruptores (municipios, componentes y opciones) */
+  .interruptores { display: grid; gap: 6px; }
+  .interruptores button {
+    font: inherit; font-size: 13px; line-height: 1.3; padding: 8px 10px; cursor: pointer; color: var(--texto);
+    text-align: left; background: #fff; border: 1px solid #bdbdbd; border-radius: 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .interruptores button:hover { border-color: var(--acento); }
+  .interruptores button[aria-pressed="true"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+  .interruptores button[aria-pressed="false"] .muestra { opacity: .35; }
+  .interruptores button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  .interruptor { position: relative; width: 26px; height: 15px; flex: none; border-radius: 8px; background: #c4c4c4; transition: background .15s; }
+  .interruptor::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  [aria-pressed="true"] .interruptor { background: var(--acento); }
+  [aria-pressed="true"] .interruptor::after { transform: translateX(11px); }
+  .muestra { flex: none; display: block; overflow: visible; }
+
+  .leyenda-item { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 6px 0; line-height: 1.35; }
+  .nota { font-size: 11.5px; line-height: 1.45; color: var(--texto-suave); }
+  .nota p { margin: 0 0 6px; }
+
+  /* Área principal: encabezado, gráfico y tabla de datos */
+  #contenedor { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+  #encabezado { flex: none; padding: 14px 18px 4px; font-size: 13.5px; line-height: 1.5; color: var(--texto-suave); }
+  #encabezado b { color: var(--texto); }
+  #area { flex: 1; position: relative; min-height: 320px; }
+  #grafico { position: absolute; inset: 0; display: block; outline: none; }
+  #grafico:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+  #grafico text { font-family: inherit; }
+  .eje { font-size: 11.5px; fill: var(--texto-suave); font-variant-numeric: tabular-nums; }
+  .eje-titulo { font-size: 12px; fill: var(--texto-suave); }
+  .valor {
+    font-size: 11px; fill: var(--texto); font-variant-numeric: tabular-nums;
+    paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round;
+  }
+  .valor-final { font-weight: 600; }
+  .mensaje { font-size: 14px; fill: var(--texto-suave); }
+
+  /* Etiqueta al pasar el cursor: valores de todas las series en el año señalado */
+  #tip {
+    position: absolute; pointer-events: none; z-index: 6; display: none; min-width: 230px;
+    background: #fff; border: 1px solid #bdbdbd; border-radius: 4px; padding: 7px 10px 6px;
+    font-size: 12.5px; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  }
+  #tip .tip-anio { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+  #tip table { border-collapse: collapse; width: 100%; }
+  #tip td { padding: 2px 0; vertical-align: middle; white-space: nowrap; }
+  #tip td.n { text-align: right; font-weight: 600; padding-left: 14px; font-variant-numeric: tabular-nums; }
+  #tip td.sw { width: 34px; }
+  #tip .tip-nota { margin-top: 4px; font-size: 11px; color: var(--texto-suave); }
+
+  /* Tabla con los datos del gráfico (vista accesible de los mismos valores) */
+  #seccion-tabla { flex: none; max-height: 36%; overflow: auto; padding: 6px 18px 14px; border-top: 1px solid var(--borde); }
+  #seccion-tabla .etiqueta { margin: 6px 0 6px; }
+  #tabla { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
+  #tabla th { font-size: 11px; font-weight: 600; color: var(--texto-suave); text-align: right; padding: 4px 0 4px 12px; border-bottom: 1px solid #262626; white-space: nowrap; }
+  #tabla th:nth-child(-n+2) { text-align: left; padding-left: 0; }
+  #tabla td { padding: 4px 0 4px 12px; text-align: right; border-bottom: 1px solid #efefef; white-space: nowrap; }
+  #tabla td:nth-child(-n+2) { text-align: left; padding-left: 0; }
+  #tabla td.componente { display: flex; align-items: center; gap: 8px; }
+  #tabla td.componente span { white-space: normal; }
+  #tabla .vacio { color: var(--texto-suave); font-style: italic; text-align: left; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; height: auto; }
+    #panel { width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--borde); padding: 16px; }
+    #contenedor { height: auto; }
+    #area { flex: none; height: 70vh; }
+    #seccion-tabla { max-height: none; }
+    #tip { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="panel">
+  <h1 id="titulo"></h1>
+  <p id="subtitulo"></p>
+  <p id="alcance"></p>
+
+  <div class="seccion">
+    <div class="etiqueta-fila"><div class="etiqueta" id="etiqueta-mpios">Municipios</div></div>
+    <div id="sel-mpios" class="interruptores" role="group" aria-labelledby="etiqueta-mpios"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta-fila">
+      <div class="etiqueta" id="etiqueta-comps">Componentes</div>
+      <div class="atajos"><button type="button" id="comps-todos">Todos</button><button type="button" id="comps-ninguno">Ninguno</button></div>
+    </div>
+    <div id="sel-comps" class="interruptores" role="group" aria-labelledby="etiqueta-comps"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta-fila">
+      <div class="etiqueta" id="etiqueta-anios">Años</div>
+      <div class="atajos"><button type="button" id="anios-todos">Todos</button><button type="button" id="anios-ninguno">Ninguno</button></div>
+    </div>
+    <div id="sel-anios" class="botones" role="group" aria-labelledby="etiqueta-anios"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta-fila"><div class="etiqueta" id="etiqueta-opciones">Opciones</div></div>
+    <div id="sel-opciones" class="interruptores" role="group" aria-labelledby="etiqueta-opciones"></div>
+  </div>
+
+  <div class="seccion">
+    <div class="etiqueta-fila"><div class="etiqueta">Convenciones</div></div>
+    <div id="convenciones"></div>
+  </div>
+
+  <div class="seccion nota" id="notas"></div>
+</aside>
+
+<main id="contenedor">
+  <div id="encabezado" aria-live="polite"></div>
+  <div id="area">
+    <svg id="grafico" tabindex="0" role="img" aria-label="Gráfico de líneas"></svg>
+    <div id="tip"></div>
+  </div>
+  <section id="seccion-tabla" aria-labelledby="etiqueta-tabla">
+    <div class="etiqueta" id="etiqueta-tabla">Datos del gráfico</div>
+    <table id="tabla"></table>
+  </section>
+</main>
+
+<script>
+  "use strict";
+
+  const CONFIG = {"titulo":"Familias atendidas por el PNIS: Puerto Guzmán y Vistahermosa","subtitulo":"Conteo acumulado de familias atendidas por componente del PAI, 2016–2022 + 2026*.","alcance":"Active los dos municipios para compararlos: cada uno tiene su propio trazo y marcador.","eje_y":"Familias atendidas (acumulado)","componentes":[{"k":"aai","corto":"AAI","largo":"Asistencia Alimentaria Inmediata","color":"#2a78d6"},{"k":"ati","corto":"ATI","largo":"Asistencia Técnica Integral","color":"#eb6834"},{"k":"sa","corto":"SA","largo":"Seguridad Alimentaria","color":"#1baf7a"},{"k":"pp_cc","corto":"PPCC","largo":"Proyectos Productivos de Ciclo Corto","color":"#eda100"},{"k":"pp_cl","corto":"PPCL","largo":"Proyectos Productivos de Ciclo Largo","color":"#e87ba4"}],"mpios_iniciales":["86571"],"anios_asterisco":[2026],"nota_asterisco":"2026: corte a la medianoche del 27 de febrero de 2026.","notas":["Familias atendidas: para 2016-2022, una familia cuenta como atendida en un componente desde el primer año en que recibió al menos COP $1 de ese componente, y se mantiene atendida el resto del período. Los datos de 2026 son los reportados por la ART en DatosAbiertos.gov."],"fuentes":"panel PNIS de familias 2016-2022 y avance de atención reportado por la ART (2026)."};
+  const DATOS = {"anios":[2016,2017,2018,2019,2020,2021,2022,2026],"mpios":[{"cod":"86571","mpio":"Puerto Guzmán","dpto":"Putumayo","v":{"aai":[0,0,2286,2538,2617,2647,2651,2638],"ati":[0,0,0,2712,2712,2712,2713,2701],"sa":[0,0,0,2257,2257,2257,2489,2410],"pp_cc":[0,0,0,0,0,0,2456,1905],"pp_cl":[0,0,0,4,4,4,12,2396]}},{"cod":"50711","mpio":"Vistahermosa","dpto":"Meta","v":{"aai":[0,1295,1564,1564,1575,1577,1577,1575],"ati":[0,0,0,1574,1574,1574,1574,1572],"sa":[0,0,0,1,1347,1347,1511,1369],"pp_cc":[0,0,0,0,0,185,1394,210],"pp_cl":[0,0,0,0,0,185,185,1507]}}]};
+
+  // ---- Configuración ----
+  // CONFIG: titulo, subtitulo, alcance, eje_y, componentes [{ k, corto, largo, color }], mpios_iniciales [cod],
+  //   anios_asterisco [año], nota_asterisco, notas [texto], fuentes.
+  // DATOS: anios [año] y mpios [{ cod, mpio, dpto, v: { k_componente: [valor por año, en el orden de anios] } }].
+  // Cada municipio se distingue por el trazo y la forma del marcador; cada componente, por su color.
+  const NS = "http://www.w3.org/2000/svg";
+  const ESTILOS = [
+    { dash: null,  marca: "circulo",   texto: "línea continua y círculos" },
+    { dash: "7 4", marca: "cuadrado",  texto: "línea discontinua y cuadrados" },
+    { dash: "2 3", marca: "triangulo", texto: "línea punteada y triángulos" }
+  ];
+  const COMPONENTES = CONFIG.componentes.map(c => Object.assign({ activa: true }, c));
+  const INICIALES = CONFIG.mpios_iniciales || [DATOS.mpios[0].cod];
+  const MUNICIPIOS = DATOS.mpios.map((m, i) =>
+    Object.assign({}, m, { estilo: ESTILOS[i % ESTILOS.length], activa: INICIALES.indexOf(m.cod) >= 0 }));
+  const ASTERISCO = CONFIG.anios_asterisco || [];
+  const ANIOS = DATOS.anios.map((a, i) =>
+    ({ a: a, i: i, sel: true, etiqueta: ASTERISCO.indexOf(a) >= 0 ? a + "*" : String(a) }));
+  let mostrarValores = false;
+
+  const miles = n => n.toLocaleString("es-CO");
+  const nombreMpio = m => m.mpio + " (" + m.dpto + ")";
+  const reducirMovimiento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Años sin datos entre el primero y el último (p. ej., 2023-2025): un tramo que los cruza se dibuja tenue
+  const SIN_DATO = [];
+  for (let a = DATOS.anios[0]; a <= DATOS.anios[DATOS.anios.length - 1]; a++) {
+    if (DATOS.anios.indexOf(a) < 0) SIN_DATO.push(a);
+  }
+  const cruzaHueco = (a0, a1) => SIN_DATO.some(a => a > a0 && a < a1);
+  const textoHueco = SIN_DATO.length
+    ? (SIN_DATO.length > 1 ? SIN_DATO[0] + "–" + SIN_DATO[SIN_DATO.length - 1] : String(SIN_DATO[0]))
+    : "";
+
+  // ---- Utilidades de dibujo ----
+
+  function svgEl(tipo, atributos, padre, texto) {
+    const e = document.createElementNS(NS, tipo);
+    Object.keys(atributos || {}).forEach(k => {
+      if (atributos[k] !== null && atributos[k] !== undefined) e.setAttribute(k, atributos[k]);
+    });
+    if (texto !== undefined) e.textContent = texto;
+    if (padre) padre.appendChild(e);
+    return e;
+  }
+  function htmlEl(tipo, atributos, padre, texto) {
+    const e = document.createElement(tipo);
+    Object.keys(atributos || {}).forEach(k => e.setAttribute(k, atributos[k]));
+    if (texto !== undefined) e.textContent = texto;
+    if (padre) padre.appendChild(e);
+    return e;
+  }
+
+  // Marcador: círculo, cuadrado o triángulo, con anillo blanco para separarlo de las líneas que cruza
+  function marca(padre, tipo, x, y, r, color) {
+    let e;
+    if (tipo === "cuadrado") e = svgEl("rect", { x: x - r * 0.9, y: y - r * 0.9, width: r * 1.8, height: r * 1.8 }, padre);
+    else if (tipo === "triangulo") e = svgEl("path", { d: "M" + x + "," + (y - r * 1.15) + "L" + (x + r * 1.1) + "," + (y + r * 0.8) + "L" + (x - r * 1.1) + "," + (y + r * 0.8) + "Z" }, padre);
+    else e = svgEl("circle", { cx: x, cy: y, r: r }, padre);
+    e.setAttribute("fill", color);
+    e.setAttribute("stroke", "#fff");
+    e.setAttribute("stroke-width", 1.5);
+    return e;
+  }
+
+  // Muestra de una serie: trazo y marcador (en color del componente o en tinta para el municipio)
+  function muestra(color, estilo, ancho, alto, tenue) {
+    ancho = ancho || 30; alto = alto || 14;
+    const s = svgEl("svg", { class: "muestra", width: ancho, height: alto, "aria-hidden": "true" });
+    svgEl("line", { x1: 1, x2: ancho - 1, y1: alto / 2, y2: alto / 2, stroke: color, "stroke-width": 2,
+                    "stroke-dasharray": estilo.dash, "stroke-opacity": tenue ? 0.35 : null }, s);
+    if (!tenue) marca(s, estilo.marca, ancho / 2, alto / 2, 4, color);
+    return s;
+  }
+
+  // Paso "redondo" (1; 2; 2,5 o 5 × 10^k) para el eje vertical
+  function pasoRedondo(v) {
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= v);
+  }
+  // Eje dinámico: de 0 a un valor redondo por encima del máximo de las series y años visibles
+  function topeEje(max) {
+    if (!(max > 0)) return 10;
+    const s = pasoRedondo(max / 5);
+    return Math.ceil(max * 1.08 / s) * s;
+  }
+
+  // ---- Estado: series visibles ----
+
+  const aniosSel = () => ANIOS.filter(a => a.sel);
+  function seriesVisibles() {
+    const sel = aniosSel();
+    const out = [];
+    MUNICIPIOS.filter(m => m.activa).forEach(m => {
+      COMPONENTES.filter(c => c.activa).forEach(c => {
+        const vals = m.v[c.k] || [];
+        out.push({ m: m, c: c, puntos: sel.map((a, j) => ({ j: j, a: a, v: vals[a.i] }))
+                                          .filter(p => typeof p.v === "number" && isFinite(p.v)) });
+      });
+    });
+    return out;
+  }
+
+  // ---- Textos fijos del panel ----
+
+  document.title = CONFIG.titulo;
+  document.getElementById("titulo").textContent = CONFIG.titulo;
+  document.getElementById("subtitulo").textContent = CONFIG.subtitulo || "";
+  document.getElementById("alcance").textContent = CONFIG.alcance || "";
+
+  const notas = document.getElementById("notas");
+  [
+    "Pase el cursor sobre el gráfico para ver los valores de cada año (o selecciónelo con Tab y use las flechas ← →). " +
+    "El eje vertical va de 0 a un valor redondo por encima del máximo de los municipios, componentes y años seleccionados, y se ajusta al cambiarlos. " +
+    "La tabla bajo el gráfico muestra los mismos valores."
+  ].concat(CONFIG.notas || []).forEach(t => htmlEl("p", {}, notas, t));
+  if (CONFIG.fuentes) htmlEl("p", {}, notas, "Fuentes: " + CONFIG.fuentes);
+
+  // Convenciones: trazo de cada municipio, tramo tenue y asterisco
+  const conv = document.getElementById("convenciones");
+  function itemConvencion(sw, texto) {
+    const d = htmlEl("div", { class: "leyenda-item" }, conv);
+    d.appendChild(sw);
+    htmlEl("span", {}, d, texto);
+  }
+  MUNICIPIOS.forEach(m => itemConvencion(muestra("#1a1a1a", m.estilo), nombreMpio(m) + ": " + m.estilo.texto));
+  if (textoHueco) itemConvencion(muestra("#1a1a1a", ESTILOS[0], 30, 14, true),
+    "Tramo tenue: une años entre los que no hay datos (" + textoHueco + ")");
+  if (CONFIG.nota_asterisco) itemConvencion(htmlEl("b", { style: "width:30px;text-align:center;flex:none" }, null, "*"), CONFIG.nota_asterisco);
+
+  // ---- Controles ----
+
+  function interruptor(contenedor, sw, texto, activo, accion) {
+    const b = htmlEl("button", { type: "button" }, contenedor);
+    htmlEl("span", { class: "interruptor", "aria-hidden": "true" }, b);
+    if (sw) b.appendChild(sw);
+    htmlEl("span", {}, b, texto);
+    b.setAttribute("aria-pressed", activo);
+    b.addEventListener("click", accion);
+    return b;
+  }
+
+  const selMpios = document.getElementById("sel-mpios");
+  MUNICIPIOS.forEach(m => {
+    m.boton = interruptor(selMpios, muestra("#1a1a1a", m.estilo), nombreMpio(m), m.activa,
+                          () => { m.activa = !m.activa; actualizar(); });
+  });
+
+  const selComps = document.getElementById("sel-comps");
+  COMPONENTES.forEach(c => {
+    c.boton = interruptor(selComps, muestra(c.color, ESTILOS[0]), c.largo + " (" + c.corto + ")", c.activa,
+                          () => { c.activa = !c.activa; actualizar(); });
+  });
+  document.getElementById("comps-todos").addEventListener("click", () => { COMPONENTES.forEach(c => { c.activa = true; }); actualizar(); });
+  document.getElementById("comps-ninguno").addEventListener("click", () => { COMPONENTES.forEach(c => { c.activa = false; }); actualizar(); });
+
+  const selAnios = document.getElementById("sel-anios");
+  ANIOS.forEach(a => {
+    a.boton = htmlEl("button", { type: "button" }, selAnios, a.etiqueta);
+    a.boton.addEventListener("click", () => { a.sel = !a.sel; actualizar(); });
+  });
+  document.getElementById("anios-todos").addEventListener("click", () => { ANIOS.forEach(a => { a.sel = true; }); actualizar(); });
+  document.getElementById("anios-ninguno").addEventListener("click", () => { ANIOS.forEach(a => { a.sel = false; }); actualizar(); });
+
+  const botonValores = interruptor(document.getElementById("sel-opciones"), null, "Mostrar el valor de cada punto",
+                                   mostrarValores, () => { mostrarValores = !mostrarValores; actualizar(); });
+
+  // ---- Gráfico ----
+
+  const area = document.getElementById("area");
+  const svg = document.getElementById("grafico");
+  const tip = document.getElementById("tip");
+  let geo = null;          // geometría del último dibujo (para la línea vertical y la etiqueta)
+  let topeActual = null;   // tope del eje vertical dibujado (se anima hacia el nuevo tope)
+  let animacion = null;
+  let cursorJ = null;      // año señalado (índice entre los años seleccionados)
+
+  function render(animar) {
+    const series = seriesVisibles();
+    const sel = aniosSel();
+    let max = 0;
+    series.forEach(s => s.puntos.forEach(p => { if (p.v > max) max = p.v; }));
+    const objetivo = topeEje(max);
+    cancelAnimationFrame(animacion);
+    if (!animar || topeActual === null || reducirMovimiento || topeActual === objetivo) {
+      topeActual = objetivo;
+      dibujar(series, sel, objetivo, objetivo);
+      return;
+    }
+    const desde = topeActual, t0 = performance.now(), duracion = 380;
+    const cuadro = ahora => {
+      const t = Math.min(1, (ahora - t0) / duracion);
+      topeActual = desde + (objetivo - desde) * (1 - Math.pow(1 - t, 3));
+      dibujar(series, sel, topeActual, objetivo);
+      if (t < 1) animacion = requestAnimationFrame(cuadro);
+    };
+    animacion = requestAnimationFrame(cuadro);
+  }
+
+  function dibujar(series, sel, tope, topeFinal) {
+    const W = area.clientWidth, H = area.clientHeight;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.textContent = "";
+
+    // Márgenes: a la derecha, espacio para las etiquetas del último año
+    const ml = 74, mt = 22, mb = 40;
+    // Con más de un municipio, cada etiqueta final lleva el marcador del municipio (forma) en el color del componente
+    const conMarca = MUNICIPIOS.filter(m => m.activa).length > 1;
+    const mr = (!mostrarValores && series.length) ? (conMarca ? 108 : 96) : 28;
+    const pw = Math.max(40, W - ml - mr), ph = Math.max(40, H - mt - mb);
+    const n = sel.length;
+    const borde = n > 1 ? Math.min(34, pw / (2 * n)) : 0;
+    const x = j => n === 1 ? ml + pw / 2 : ml + borde + j * (pw - 2 * borde) / (n - 1);
+    const y = v => mt + ph - Math.max(0, v) / tope * ph;
+
+    // Rejilla y eje vertical: marcas en pasos redondos del mayor entre el tope actual y el final, para que
+    // durante la animación nunca haya más de ~11 líneas (al reducir el eje de 3.000 a 10, por ejemplo)
+    const paso = pasoRedondo(Math.max(tope, topeFinal) / 5);
+    const rejilla = svgEl("g", { "aria-hidden": "true" }, svg);
+    for (let v = 0; v <= tope + 1e-9; v += paso) {
+      const yy = y(v);
+      svgEl("line", { x1: ml, x2: ml + pw, y1: yy, y2: yy, stroke: v === 0 ? "#262626" : "#ececec", "stroke-width": 1 }, rejilla);
+      svgEl("text", { class: "eje", x: ml - 8, y: yy + 4, "text-anchor": "end" }, rejilla, miles(+v.toPrecision(12)));
+    }
+    svgEl("line", { x1: ml - 0.5, x2: ml - 0.5, y1: mt - 6, y2: mt + ph, stroke: "#262626", "stroke-width": 1 }, rejilla);
+    svgEl("text", { class: "eje-titulo", transform: "translate(16," + (mt + ph / 2) + ") rotate(-90)", "text-anchor": "middle" },
+          rejilla, CONFIG.eje_y || "");
+
+    // Eje horizontal: un lugar por año seleccionado, a la misma distancia (como en los gráficos de Stata)
+    sel.forEach((a, j) => {
+      svgEl("line", { x1: x(j), x2: x(j), y1: mt + ph, y2: mt + ph + 5, stroke: "#262626", "stroke-width": 1 }, rejilla);
+      svgEl("text", { class: "eje", x: x(j), y: mt + ph + 20, "text-anchor": "middle" }, rejilla, a.etiqueta);
+    });
+
+    geo = { series: series, sel: sel, x: x, y: y, ml: ml, mt: mt, pw: pw, ph: ph, W: W, H: H, marcas: [] };
+
+    if (!series.length || !n) {
+      const falta = !MUNICIPIOS.some(m => m.activa) ? "un municipio"
+                  : !COMPONENTES.some(c => c.activa) ? "un componente" : "un año";
+      svgEl("text", { class: "mensaje", x: ml + pw / 2, y: mt + ph / 2, "text-anchor": "middle" }, svg,
+            "Seleccione al menos " + falta + ".");
+      svg.setAttribute("aria-label", "Gráfico vacío: seleccione al menos " + falta + ".");
+      return;
+    }
+
+    // Líneas: un tramo por par de años seleccionados consecutivos; tenue si cruza años sin datos
+    const capaLineas = svgEl("g", {}, svg);
+    series.forEach(s => {
+      for (let k = 1; k < s.puntos.length; k++) {
+        const p0 = s.puntos[k - 1], p1 = s.puntos[k];
+        svgEl("line", { x1: x(p0.j), y1: y(p0.v), x2: x(p1.j), y2: y(p1.v), stroke: s.c.color, "stroke-width": 2,
+                        "stroke-linecap": "round", "stroke-dasharray": s.m.estilo.dash,
+                        "stroke-opacity": cruzaHueco(p0.a.a, p1.a.a) ? 0.35 : 1 }, capaLineas);
+      }
+    });
+
+    // Marcadores (encima de todas las líneas)
+    const capaMarcas = svgEl("g", {}, svg);
+    series.forEach(s => {
+      s.puntos.forEach(p => {
+        const e = marca(capaMarcas, s.m.estilo.marca, x(p.j), y(p.v), 4.5, s.c.color);
+        geo.marcas.push({ e: e, j: p.j });
+      });
+    });
+
+    // Valores: en cada punto (opción) o, por defecto, solo al final de cada línea, sin superponerse
+    const capaValores = svgEl("g", { "aria-hidden": "true" }, svg);
+    if (mostrarValores) {
+      series.forEach(s => s.puntos.forEach(p => {
+        svgEl("text", { class: "valor", x: x(p.j), y: y(p.v) - 9, "text-anchor": "middle" }, capaValores, miles(p.v));
+      }));
+    } else {
+      const finales = series.filter(s => s.puntos.length).map(s => {
+        const p = s.puntos[s.puntos.length - 1];
+        return { s: s, p: p, yy: y(p.v) };
+      }).sort((a, b) => a.yy - b.yy);
+      const sep = 14;
+      for (let k = 1; k < finales.length; k++) {
+        if (finales[k].yy < finales[k - 1].yy + sep) finales[k].yy = finales[k - 1].yy + sep;
+      }
+      const limite = mt + ph + 4;
+      if (finales.length && finales[finales.length - 1].yy > limite) {
+        finales[finales.length - 1].yy = limite;
+        for (let k = finales.length - 2; k >= 0; k--) {
+          if (finales[k].yy > finales[k + 1].yy - sep) finales[k].yy = finales[k + 1].yy - sep;
+        }
+      }
+      finales.forEach(f => {
+        const x0 = x(f.p.j) + 9;
+        if (Math.abs(f.yy - y(f.p.v)) > 2) {
+          svgEl("line", { x1: x(f.p.j) + 6, y1: y(f.p.v), x2: x0 + 2, y2: f.yy, stroke: "#9a9a9a", "stroke-width": 1 }, capaValores);
+        }
+        let xt = x0 + 4;
+        if (conMarca) {
+          marca(capaValores, f.s.m.estilo.marca, x0 + 8, f.yy, 3.5, f.s.c.color);
+          xt = x0 + 15;
+        }
+        const t = svgEl("text", { class: "valor valor-final", x: xt, y: f.yy + 4 }, capaValores);
+        svgEl("tspan", {}, t, f.s.c.corto + " ");
+        svgEl("tspan", { "font-weight": 400 }, t, miles(f.p.v));
+      });
+    }
+
+    // Capa de interacción: línea vertical y zona de captura del cursor
+    geo.guia = svgEl("line", { x1: 0, x2: 0, y1: mt, y2: mt + ph, stroke: "#8a8a8a", "stroke-width": 1,
+                               "stroke-dasharray": "3 3", visibility: "hidden", "pointer-events": "none" }, svg);
+    const captura = svgEl("rect", { x: ml, y: 0, width: pw, height: mt + ph + 30, fill: "transparent" }, svg);
+    captura.addEventListener("pointermove", e => {
+      const r = svg.getBoundingClientRect();
+      señalar(masCercano(e.clientX - r.left), e.clientX - r.left, e.clientY - r.top);
+    });
+    captura.addEventListener("pointerleave", ocultarSeñal);
+
+    svg.setAttribute("aria-label", "Gráfico de líneas: " + series.length + " series y " + n +
+                     " años. Los valores están en la tabla bajo el gráfico.");
+    if (cursorJ !== null && cursorJ < n && document.activeElement === svg) señalar(cursorJ);
+  }
+
+  function masCercano(px) {
+    if (!geo || !geo.sel.length) return null;
+    let mejor = 0, d = Infinity;
+    geo.sel.forEach((a, j) => { const dj = Math.abs(geo.x(j) - px); if (dj < d) { d = dj; mejor = j; } });
+    return mejor;
+  }
+
+  // Línea vertical en el año j, marcadores de ese año resaltados y etiqueta con todos los valores
+  function señalar(j, px, py) {
+    if (!geo || j === null || !geo.series.length) return;
+    cursorJ = j;
+    const xx = geo.x(j);
+    geo.guia.setAttribute("x1", xx);
+    geo.guia.setAttribute("x2", xx);
+    geo.guia.setAttribute("visibility", "visible");
+    geo.marcas.forEach(m => m.e.setAttribute("stroke-width", m.j === j ? 3 : 1.5));
+
+    const a = geo.sel[j];
+    const filas = geo.series.map(s => ({ s: s, p: s.puntos.find(p => p.j === j) }))
+                            .filter(f => f.p)
+                            .sort((f1, f2) => f2.p.v - f1.p.v);
+    tip.textContent = "";
+    htmlEl("div", { class: "tip-anio" }, tip, a.etiqueta);
+    const tabla = htmlEl("table", {}, tip);
+    filas.forEach(f => {
+      const tr = htmlEl("tr", {}, tabla);
+      htmlEl("td", { class: "sw" }, tr).appendChild(muestra(f.s.c.color, f.s.m.estilo, 26, 12));
+      htmlEl("td", {}, tr, f.s.c.corto + " · " + f.s.m.mpio);
+      htmlEl("td", { class: "n" }, tr, miles(f.p.v));
+    });
+    if (ASTERISCO.indexOf(a.a) >= 0 && CONFIG.nota_asterisco) htmlEl("div", { class: "tip-nota" }, tip, "* " + CONFIG.nota_asterisco);
+
+    tip.style.display = "block";
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    if (px === undefined) { px = xx; py = geo.mt + 10; }
+    let left = px + 16;
+    if (left + w > area.clientWidth - 4) left = px - w - 16;
+    tip.style.left = Math.max(4, left) + "px";
+    tip.style.top = Math.min(Math.max(4, py - h / 2), area.clientHeight - h - 4) + "px";
+  }
+
+  function ocultarSeñal() {
+    tip.style.display = "none";
+    if (geo && geo.guia) geo.guia.setAttribute("visibility", "hidden");
+    if (geo) geo.marcas.forEach(m => m.e.setAttribute("stroke-width", 1.5));
+  }
+
+  // Teclado: con el gráfico seleccionado, las flechas recorren los años; Escape oculta la etiqueta
+  svg.addEventListener("focus", () => { if (geo && geo.sel.length) señalar(cursorJ !== null && cursorJ < geo.sel.length ? cursorJ : geo.sel.length - 1); });
+  svg.addEventListener("blur", ocultarSeñal);
+  svg.addEventListener("keydown", e => {
+    if (!geo || !geo.sel.length) return;
+    const actual = cursorJ !== null && cursorJ < geo.sel.length ? cursorJ : geo.sel.length - 1;
+    if (e.key === "ArrowLeft") { señalar(Math.max(0, actual - 1)); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { señalar(Math.min(geo.sel.length - 1, actual + 1)); e.preventDefault(); }
+    else if (e.key === "Escape") ocultarSeñal();
+  });
+
+  // ---- Tabla de datos y encabezado ----
+
+  function dibujarTabla(series, sel) {
+    const tabla = document.getElementById("tabla");
+    tabla.textContent = "";
+    const cab = htmlEl("tr", {}, htmlEl("thead", {}, tabla));
+    htmlEl("th", { scope: "col" }, cab, "Municipio");
+    htmlEl("th", { scope: "col" }, cab, "Componente");
+    sel.forEach(a => htmlEl("th", { scope: "col" }, cab, a.etiqueta));
+    const cuerpo = htmlEl("tbody", {}, tabla);
+    if (!series.length || !sel.length) {
+      htmlEl("td", { colspan: 2 + sel.length, class: "vacio" }, htmlEl("tr", {}, cuerpo), "Sin series seleccionadas.");
+      return;
+    }
+    series.forEach(s => {
+      const tr = htmlEl("tr", {}, cuerpo);
+      htmlEl("td", {}, tr, nombreMpio(s.m));
+      const td = htmlEl("td", { class: "componente" }, tr);
+      td.appendChild(muestra(s.c.color, s.m.estilo, 26, 12));
+      htmlEl("span", {}, td, s.c.largo + " (" + s.c.corto + ")");
+      sel.forEach((a, j) => {
+        const p = s.puntos.find(q => q.j === j);
+        htmlEl("td", {}, tr, p ? miles(p.v) : "–");
+      });
+    });
+  }
+
+  function dibujarEncabezado(series, sel) {
+    const enc = document.getElementById("encabezado");
+    enc.textContent = "";
+    const activos = MUNICIPIOS.filter(m => m.activa);
+    const linea1 = htmlEl("div", {}, enc);
+    if (!activos.length) htmlEl("b", {}, linea1, "Ningún municipio seleccionado");
+    activos.forEach((m, i) => {
+      if (i) linea1.appendChild(document.createTextNode(" y "));
+      htmlEl("b", {}, linea1, nombreMpio(m));
+    });
+    linea1.appendChild(document.createTextNode(
+      " · " + COMPONENTES.filter(c => c.activa).length + " de " + COMPONENTES.length + " componentes · " +
+      sel.length + " de " + ANIOS.length + " años"));
+    let max = 0;
+    series.forEach(s => s.puntos.forEach(p => { if (p.v > max) max = p.v; }));
+    htmlEl("div", {}, enc, (CONFIG.eje_y || "Valor") + (series.length && sel.length
+      ? " · eje vertical de 0 a " + miles(topeEje(max)) + " (máximo visible: " + miles(max) + ")"
+      : " · sin series seleccionadas"));
+  }
+
+  // ---- Actualización ----
+
+  function actualizar() {
+    MUNICIPIOS.forEach(m => m.boton.setAttribute("aria-pressed", m.activa));
+    COMPONENTES.forEach(c => c.boton.setAttribute("aria-pressed", c.activa));
+    ANIOS.forEach(a => a.boton.setAttribute("aria-pressed", a.sel));
+    botonValores.setAttribute("aria-pressed", mostrarValores);
+    ocultarSeñal();
+    const series = seriesVisibles(), sel = aniosSel();
+    dibujarEncabezado(series, sel);
+    dibujarTabla(series, sel);
+    render(true);
+  }
+
+  let espera;
+  new ResizeObserver(() => { clearTimeout(espera); espera = setTimeout(() => render(false), 80); }).observe(area);
+
+  actualizar();
+</script>
+</body>
+</html>
